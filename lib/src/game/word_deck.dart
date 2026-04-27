@@ -1,36 +1,37 @@
 import 'dart:math';
 
-class WordDeck {
-  WordDeck(List<String> sourceWords, {Random? random})
-    : _sourceWords = List.unmodifiable(sourceWords),
+class WordDeck<T> {
+  WordDeck(List<T> sourceWords, {Random? random})
+    : _sourceEntries = List.unmodifiable(sourceWords),
       _random = random ?? Random();
 
-  final List<String> _sourceWords;
+  final List<T> _sourceEntries;
   final Random _random;
-  final List<String> _remainingWords = [];
-  String? _lastWord;
+  final List<T> _remainingEntries = [];
+  T? _lastEntry;
 
-  String nextWord() {
-    if (_sourceWords.isEmpty) {
+  T nextWord() {
+    if (_sourceEntries.isEmpty) {
       throw StateError('O banco de palavras não pode estar vazio.');
     }
 
-    if (_remainingWords.isEmpty) {
-      _remainingWords
+    if (_remainingEntries.isEmpty) {
+      _remainingEntries
         ..clear()
-        ..addAll(_sourceWords)
+        ..addAll(_sourceEntries)
         ..shuffle(_random);
 
-      if (_remainingWords.length > 1 && _remainingWords.first == _lastWord) {
-        final swapIndex = 1 + _random.nextInt(_remainingWords.length - 1);
-        final firstWord = _remainingWords.first;
-        _remainingWords[0] = _remainingWords[swapIndex];
-        _remainingWords[swapIndex] = firstWord;
+      if (_remainingEntries.length > 1 &&
+          _remainingEntries.first == _lastEntry) {
+        final swapIndex = 1 + _random.nextInt(_remainingEntries.length - 1);
+        final firstEntry = _remainingEntries.first;
+        _remainingEntries[0] = _remainingEntries[swapIndex];
+        _remainingEntries[swapIndex] = firstEntry;
       }
     }
 
-    final next = _remainingWords.removeAt(0);
-    _lastWord = next;
+    final next = _remainingEntries.removeAt(0);
+    _lastEntry = next;
     return next;
   }
 }

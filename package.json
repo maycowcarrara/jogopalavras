@@ -10,11 +10,11 @@
     "android:emulators": "C:\\Flutter\\flutter\\bin\\flutter.bat emulators",
     "android:start": "C:\\Flutter\\flutter\\bin\\flutter.bat emulators --launch",
     "dev": "C:\\Flutter\\flutter\\bin\\flutter.bat run",
-    "dev:ads": "C:\\Flutter\\flutter\\bin\\flutter.bat run --dart-define=ADS_ENABLED=true --dart-define=ADMOB_ANDROID_INTERSTITIAL_ID=%ADMOB_ANDROID_INTERSTITIAL_ID%",
+    "dev:ads": "C:\\Flutter\\flutter\\bin\\flutter.bat run --dart-define=ADS_ENABLED=true --dart-define=ADMOB_ANDROID_BANNER_ID=%ADMOB_ANDROID_BANNER_ID% --dart-define=ADMOB_ANDROID_INTERSTITIAL_ID=%ADMOB_ANDROID_INTERSTITIAL_ID%",
     "analyze": "C:\\Flutter\\flutter\\bin\\flutter.bat analyze --no-pub",
     "test:flutter": "C:\\Flutter\\flutter\\bin\\flutter.bat test --no-pub",
     "build:apk": "C:\\Flutter\\flutter\\bin\\flutter.bat build apk --release",
     "build:aab": "C:\\Flutter\\flutter\\bin\\flutter.bat build appbundle --release",
-    "build:aab:ads": "C:\\Flutter\\flutter\\bin\\flutter.bat build appbundle --release --dart-define=ADS_ENABLED=true --dart-define=ADMOB_ANDROID_INTERSTITIAL_ID=%ADMOB_ANDROID_INTERSTITIAL_ID%"
+    "build:aab:ads": "C:\\Flutter\\flutter\\bin\\flutter.bat build appbundle --release --dart-define=ADS_ENABLED=true --dart-define=ADMOB_ANDROID_BANNER_ID=%ADMOB_ANDROID_BANNER_ID% --dart-define=ADMOB_ANDROID_INTERSTITIAL_ID=%ADMOB_ANDROID_INTERSTITIAL_ID%"
   }
 }

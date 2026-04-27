@@ -13,13 +13,13 @@ void main() {
     await tester.tap(find.text('Iniciar jogo'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Escolha seu ritmo'), findsOneWidget);
+    expect(find.text('Escolha a editoria'), findsOneWidget);
     expect(find.text('Começar no fácil'), findsOneWidget);
 
     await tester.tap(find.text('Começar no fácil'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Jardim em revelacao'), findsOneWidget);
+    expect(find.text('Coluna leve'), findsOneWidget);
     expect(find.textContaining('0/100'), findsOneWidget);
   });
 }

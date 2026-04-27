@@ -1,6 +1,8 @@
 import 'dart:math';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:jogopalavras/src/game/game_level.dart';
+import 'package:jogopalavras/src/game/word_bank.dart';
 import 'package:jogopalavras/src/game/word_deck.dart';
 
 void main() {
@@ -32,4 +34,33 @@ void main() {
       expect(draws[2] == draws[3], isFalse);
     },
   );
+
+  test('todas as palavras têm dicas sem entregar a resposta', () {
+    for (final level in GameLevel.values) {
+      final entries = wordBank[level]!;
+
+      expect(entries, isNotEmpty);
+
+      for (final entry in entries) {
+        expect(entry.text, isNotEmpty);
+        expect(entry.hint, isNotEmpty);
+        expect(
+          _normalize(entry.hint).contains(_normalize(entry.text)),
+          isFalse,
+          reason: 'A dica de ${entry.text} entrega a palavra.',
+        );
+      }
+    }
+  });
+}
+
+String _normalize(String value) {
+  return value
+      .toUpperCase()
+      .replaceAll(RegExp('[ÁÀÂÃ]'), 'A')
+      .replaceAll(RegExp('[ÉÊ]'), 'E')
+      .replaceAll(RegExp('[Í]'), 'I')
+      .replaceAll(RegExp('[ÓÔÕ]'), 'O')
+      .replaceAll(RegExp('[Ú]'), 'U')
+      .replaceAll(RegExp('[Ç]'), 'C');
 }

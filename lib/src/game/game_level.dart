@@ -42,62 +42,62 @@ extension GameLevelDetails on GameLevel {
 
   Color get accent => switch (this) {
     GameLevel.easy => AppTheme.mint,
-    GameLevel.medium => AppTheme.amber,
+    GameLevel.medium => AppTheme.electricBlue,
     GameLevel.hard => AppTheme.coral,
   };
 
   IconData get icon => switch (this) {
-    GameLevel.easy => Icons.auto_awesome,
-    GameLevel.medium => Icons.bolt,
-    GameLevel.hard => Icons.local_fire_department,
+    GameLevel.easy => Icons.article_outlined,
+    GameLevel.medium => Icons.newspaper_rounded,
+    GameLevel.hard => Icons.local_library_rounded,
   };
 
   String get sceneTitle => switch (this) {
-    GameLevel.easy => 'Jardim em revelacao',
-    GameLevel.medium => 'Oficina em movimento',
-    GameLevel.hard => 'Templo em chamas',
+    GameLevel.easy => 'Coluna leve',
+    GameLevel.medium => 'Caderno principal',
+    GameLevel.hard => 'Edicao de domingo',
   };
 
   String get sceneSubtitle => switch (this) {
-    GameLevel.easy => 'Cada acerto abre uma nova parte da paisagem.',
-    GameLevel.medium => 'Monte palavras para energizar a cena.',
-    GameLevel.hard => 'A rodada finaliza quando o painel ganha vida.',
+    GameLevel.easy => 'Cada acerto revela uma nova chamada.',
+    GameLevel.medium => 'Monte palavras para fechar a manchete.',
+    GameLevel.hard => 'Complete a pagina antes do fechamento.',
   };
 
   List<Color> get sceneGradient => switch (this) {
     GameLevel.easy => const [
-      Color(0xFFEEF6D8),
-      Color(0xFFD4EDC5),
-      Color(0xFFF8E7AF),
+      Color(0xFFFFFCF5),
+      Color(0xFFEDE5D6),
+      Color(0xFFD8CFBE),
     ],
     GameLevel.medium => const [
-      Color(0xFFFFE2BB),
-      Color(0xFFF7BE73),
-      Color(0xFFEB8A5B),
+      Color(0xFFFFFCF5),
+      Color(0xFFD7E0E3),
+      Color(0xFF8DA5B1),
     ],
     GameLevel.hard => const [
-      Color(0xFFFFD7C2),
-      Color(0xFFE69568),
-      Color(0xFFB54C5C),
+      Color(0xFFFFFCF5),
+      Color(0xFFE4CAC4),
+      Color(0xFF9E2F2F),
     ],
   };
 
   IconData get sceneIcon => switch (this) {
-    GameLevel.easy => Icons.park_rounded,
-    GameLevel.medium => Icons.precision_manufacturing_rounded,
-    GameLevel.hard => Icons.whatshot_rounded,
+    GameLevel.easy => Icons.short_text_rounded,
+    GameLevel.medium => Icons.view_column_rounded,
+    GameLevel.hard => Icons.menu_book_rounded,
   };
 
   IconData get sceneAccentIcon => switch (this) {
-    GameLevel.easy => Icons.wb_sunny_rounded,
-    GameLevel.medium => Icons.flash_on_rounded,
-    GameLevel.hard => Icons.nightlight_round,
+    GameLevel.easy => Icons.format_quote_rounded,
+    GameLevel.medium => Icons.title_rounded,
+    GameLevel.hard => Icons.history_edu_rounded,
   };
 
   String get soundtrackLabel => switch (this) {
-    GameLevel.easy => 'Brisa calma',
-    GameLevel.medium => 'Pulso arcade',
-    GameLevel.hard => 'Chama intensa',
+    GameLevel.easy => 'Leitura calma',
+    GameLevel.medium => 'Ritmo de foco',
+    GameLevel.hard => 'Noite editorial',
   };
 
   String get soundtrackAsset => switch (this) {
@@ -107,8 +107,8 @@ extension GameLevelDetails on GameLevel {
   };
 
   double get soundtrackVolume => switch (this) {
-    GameLevel.easy => 0.34,
-    GameLevel.medium => 0.38,
-    GameLevel.hard => 0.42,
+    GameLevel.easy => 0.24,
+    GameLevel.medium => 0.27,
+    GameLevel.hard => 0.3,
   };
 }

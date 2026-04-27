@@ -22,7 +22,7 @@ class AdService {
   }
 
   Future<void> registerNaturalBreak() async {
-    if (kIsWeb || !AdConfig.canRequestAds) {
+    if (kIsWeb || !AdConfig.hasInterstitialPlacement) {
       return;
     }
 
@@ -52,7 +52,9 @@ class AdService {
   }
 
   void _loadInterstitial() {
-    if (_isLoading || _interstitialAd != null || !AdConfig.canRequestAds) {
+    if (_isLoading ||
+        _interstitialAd != null ||
+        !AdConfig.hasInterstitialPlacement) {
       return;
     }
 

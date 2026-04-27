@@ -3,6 +3,7 @@ import 'package:jogopalavras/src/game/game_level.dart';
 import 'package:jogopalavras/src/navigation/app_page_route.dart';
 import 'package:jogopalavras/src/screens/game_screen.dart';
 import 'package:jogopalavras/src/theme/app_theme.dart';
+import 'package:jogopalavras/src/widgets/ad_banner_slot.dart';
 import 'package:jogopalavras/src/widgets/app_backdrop.dart';
 import 'package:jogopalavras/src/widgets/reveal_on_mount.dart';
 
@@ -16,8 +17,8 @@ class LevelScreen extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(),
       body: AppBackdrop(
-        primary: AppTheme.mint,
-        secondary: AppTheme.amber,
+        primary: AppTheme.pressBlue,
+        secondary: AppTheme.pressRed,
         child: SafeArea(
           child: ListView(
             padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
@@ -26,21 +27,14 @@ class LevelScreen extends StatelessWidget {
                 child: Container(
                   padding: const EdgeInsets.all(20),
                   decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [
-                        Color(0xFF8EAF72),
-                        Color(0xFFE0A63B),
-                        Color(0xFFB54C5C),
-                      ],
-                    ),
-                    borderRadius: BorderRadius.circular(28),
+                    color: AppTheme.midnight,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: AppTheme.midnight),
                     boxShadow: [
                       BoxShadow(
-                        color: AppTheme.electricBlue.withValues(alpha: 0.18),
-                        blurRadius: 30,
-                        offset: const Offset(0, 16),
+                        color: AppTheme.midnight.withValues(alpha: 0.16),
+                        blurRadius: 20,
+                        offset: const Offset(0, 12),
                       ),
                     ],
                   ),
@@ -48,15 +42,16 @@ class LevelScreen extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Escolha seu ritmo',
+                        'Escolha a editoria',
                         style: theme.textTheme.headlineSmall?.copyWith(
                           color: Colors.white,
                           fontWeight: FontWeight.w900,
+                          letterSpacing: 0,
                         ),
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        'Mesmo jogo, ritmos diferentes para você escolher.',
+                        'Cada nível muda o tamanho das palavras e a densidade do tabuleiro.',
                         style: theme.textTheme.bodyLarge?.copyWith(
                           color: Colors.white.withValues(alpha: 0.86),
                           height: 1.3,
@@ -65,9 +60,9 @@ class LevelScreen extends StatelessWidget {
                       ),
                       const SizedBox(height: 14),
                       const _HeroSummary(
-                        icon: Icons.tune_rounded,
+                        icon: Icons.subject_rounded,
                         label:
-                            'Palavras de 4 a 9 letras • do leve ao desafiador',
+                            'Palavras de 4 a 9 letras • da nota curta ao caderno especial',
                       ),
                     ],
                   ),
@@ -81,6 +76,7 @@ class LevelScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 18),
               ],
+              const AdBannerSlot(),
             ],
           ),
         ),
@@ -99,14 +95,14 @@ class _LevelCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(22),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.9),
-        borderRadius: BorderRadius.circular(30),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.7)),
+        color: AppTheme.card.withValues(alpha: 0.96),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppTheme.rule.withValues(alpha: 0.9)),
         boxShadow: [
           BoxShadow(
-            color: level.accent.withValues(alpha: 0.18),
-            blurRadius: 24,
-            offset: const Offset(0, 14),
+            color: AppTheme.midnight.withValues(alpha: 0.08),
+            blurRadius: 14,
+            offset: const Offset(0, 8),
           ),
         ],
       ),
@@ -119,15 +115,8 @@ class _LevelCard extends StatelessWidget {
                 width: 56,
                 height: 56,
                 decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [
-                      level.accent.withValues(alpha: 0.95),
-                      AppTheme.coral,
-                    ],
-                  ),
-                  borderRadius: BorderRadius.circular(18),
+                  color: level.accent,
+                  borderRadius: BorderRadius.circular(8),
                 ),
                 child: Icon(level.icon, color: Colors.white),
               ),
@@ -140,6 +129,7 @@ class _LevelCard extends StatelessWidget {
                       level.title,
                       style: Theme.of(context).textTheme.titleLarge?.copyWith(
                         fontWeight: FontWeight.w900,
+                        letterSpacing: 0,
                       ),
                     ),
                     const SizedBox(height: 4),
@@ -161,7 +151,10 @@ class _LevelCard extends StatelessWidget {
                 ),
                 decoration: BoxDecoration(
                   color: level.accent.withValues(alpha: 0.14),
-                  borderRadius: BorderRadius.circular(999),
+                  borderRadius: BorderRadius.circular(7),
+                  border: Border.all(
+                    color: level.accent.withValues(alpha: 0.22),
+                  ),
                 ),
                 child: Text(
                   level.wordSizeShortLabel,
@@ -230,7 +223,8 @@ class _HeroSummary extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
       ),
       child: Row(
         children: [
@@ -269,7 +263,8 @@ class _LevelNote extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
         color: accent.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: accent.withValues(alpha: 0.18)),
       ),
       child: Row(
         children: [
@@ -304,22 +299,18 @@ class _LevelPlayButton extends StatelessWidget {
       color: Colors.transparent,
       child: Ink(
         decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.centerLeft,
-            end: Alignment.centerRight,
-            colors: [accent, AppTheme.coral],
-          ),
-          borderRadius: BorderRadius.circular(24),
+          color: AppTheme.midnight,
+          borderRadius: BorderRadius.circular(10),
           boxShadow: [
             BoxShadow(
-              color: accent.withValues(alpha: 0.24),
-              blurRadius: 22,
-              offset: const Offset(0, 12),
+              color: AppTheme.midnight.withValues(alpha: 0.16),
+              blurRadius: 16,
+              offset: const Offset(0, 9),
             ),
           ],
         ),
         child: InkWell(
-          borderRadius: BorderRadius.circular(24),
+          borderRadius: BorderRadius.circular(10),
           onTap: onPressed,
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
@@ -329,8 +320,8 @@ class _LevelPlayButton extends StatelessWidget {
                   width: 38,
                   height: 38,
                   decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.16),
-                    shape: BoxShape.circle,
+                    color: accent,
+                    borderRadius: BorderRadius.circular(8),
                   ),
                   child: const Icon(
                     Icons.play_arrow_rounded,

@@ -1,6 +1,7 @@
 # Anagrama Oculto
 
-Jogo mobile em Flutter focado em formar palavras em portugues dentro de um grid com arraste, visual caloroso e ritmo de rodada curto.
+Jogo mobile em Flutter focado em formar palavras em portugues dentro de um grid
+com arraste, visual editorial inspirado em jornal e ritmo de rodada curto.
 
 ## O que existe hoje
 
@@ -10,7 +11,9 @@ Jogo mobile em Flutter focado em formar palavras em portugues dentro de um grid 
 - cabecalho compacto de pontuacao com meta de rodada
 - card de progresso visual no meio da tela com "cena" sendo revelada aos poucos
 - trilha de fundo por nivel com botao de mute na tela de jogo
-- preparacao para AdMob interstitial em pausas naturais
+- aviso claro sobre anuncios e objetivo do jogo
+- preparacao para AdMob com banner reservado e interstitial em pausas naturais
+- materiais de Play Store, privacidade e checklist de release em `docs/`
 
 ## Loop atual da partida
 
@@ -69,3 +72,10 @@ Existe um guia rapido em [docs/playstore-e-anuncios.md](docs/playstore-e-anuncio
 - configurar assinatura de release
 - ativar AdMob com IDs reais
 - gerar o app bundle para a Play Store
+- preencher listagem, seguranca de dados e politica de privacidade
+
+Materiais de publicacao:
+
+- [docs/play-store-listing.md](docs/play-store-listing.md)
+- [docs/privacy-policy.md](docs/privacy-policy.md)
+- [docs/release-checklist.md](docs/release-checklist.md)

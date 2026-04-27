@@ -10,8 +10,15 @@ class AdConfig {
 
   static const String sampleAndroidAppId =
       'ca-app-pub-3940256099942544~3347511713';
+  static const String sampleAndroidBannerId =
+      'ca-app-pub-3940256099942544/6300978111';
   static const String sampleAndroidInterstitialId =
       'ca-app-pub-3940256099942544/1033173712';
+
+  static const String androidBannerId = String.fromEnvironment(
+    'ADMOB_ANDROID_BANNER_ID',
+    defaultValue: '',
+  );
 
   static const String androidInterstitialId = String.fromEnvironment(
     'ADMOB_ANDROID_INTERSTITIAL_ID',
@@ -28,6 +35,20 @@ class AdConfig {
     return androidInterstitialId;
   }
 
-  static bool get canRequestAds =>
+  static String get resolvedBannerId {
+    if (useTestAds) {
+      return sampleAndroidBannerId;
+    }
+
+    return androidBannerId;
+  }
+
+  static bool get hasBannerPlacement =>
+      adsEnabled && resolvedBannerId.trim().isNotEmpty;
+
+  static bool get hasInterstitialPlacement =>
       adsEnabled && resolvedInterstitialId.trim().isNotEmpty;
+
+  static bool get canRequestAds =>
+      hasBannerPlacement || hasInterstitialPlacement;
 }
