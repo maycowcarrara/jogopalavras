@@ -1,0 +1,281 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Ranking publico do Anagrama Oculto."
+    />
+    <title>Ranking | Anagrama Oculto</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --paper: #f3efe5;
+        --card: #fffcf5;
+        --ink: #171717;
+        --body: #2d2a25;
+        --rule: #bdb4a3;
+        --red: #9e2f2f;
+        --blue: #2f5368;
+        --gold: #c49a4a;
+        --green: #60735a;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background:
+          linear-gradient(rgba(255, 255, 255, 0.72), rgba(243, 239, 229, 0.88)),
+          repeating-linear-gradient(
+            0deg,
+            rgba(23, 23, 23, 0.05) 0,
+            rgba(23, 23, 23, 0.05) 1px,
+            transparent 1px,
+            transparent 18px
+          ),
+          var(--paper);
+        color: var(--body);
+        font-family: Georgia, "Times New Roman", serif;
+        line-height: 1.45;
+      }
+
+      main {
+        width: min(960px, calc(100% - 32px));
+        margin: 0 auto;
+        padding: 42px 0;
+      }
+
+      header {
+        padding: 26px;
+        background: var(--card);
+        border: 2px solid var(--ink);
+        border-radius: 12px;
+        box-shadow: 0 12px 28px rgba(23, 23, 23, 0.1);
+      }
+
+      .eyebrow {
+        display: inline-block;
+        margin-bottom: 12px;
+        padding: 6px 10px;
+        background: var(--red);
+        color: #fff;
+        border-radius: 6px;
+        font-size: 0.78rem;
+        font-weight: 700;
+        text-transform: uppercase;
+      }
+
+      h1 {
+        margin: 0;
+        color: var(--ink);
+        font-size: clamp(2.2rem, 8vw, 4.7rem);
+        line-height: 0.95;
+      }
+
+      nav {
+        margin-top: 18px;
+      }
+
+      a {
+        color: var(--blue);
+        font-weight: 700;
+      }
+
+      .levels {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+        gap: 16px;
+        margin-top: 22px;
+      }
+
+      section {
+        min-height: 300px;
+        padding: 18px;
+        background: rgba(255, 252, 245, 0.9);
+        border: 1px solid var(--rule);
+        border-radius: 12px;
+      }
+
+      h2 {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        margin: 0 0 14px;
+        color: var(--ink);
+      }
+
+      h2::before {
+        width: 12px;
+        height: 26px;
+        background: var(--accent);
+        border-radius: 3px;
+        content: "";
+      }
+
+      ol {
+        display: grid;
+        gap: 10px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+
+      li {
+        display: grid;
+        grid-template-columns: 32px 1fr auto;
+        gap: 10px;
+        align-items: center;
+        padding: 12px;
+        background: #fffaf0;
+        border: 1px solid rgba(189, 180, 163, 0.78);
+        border-radius: 10px;
+      }
+
+      .position {
+        display: grid;
+        width: 32px;
+        height: 32px;
+        place-items: center;
+        background: var(--accent);
+        color: #fff;
+        border-radius: 8px;
+        font-weight: 900;
+      }
+
+      .name {
+        display: block;
+        color: var(--ink);
+        font-size: 1.2rem;
+        font-weight: 900;
+      }
+
+      .meta {
+        display: block;
+        color: rgba(45, 42, 37, 0.72);
+        font-size: 0.92rem;
+        font-weight: 700;
+      }
+
+      .score {
+        padding: 8px 10px;
+        background: var(--ink);
+        color: #fff;
+        border-radius: 8px;
+        font-weight: 900;
+      }
+
+      .message {
+        padding: 16px;
+        color: rgba(45, 42, 37, 0.72);
+        font-weight: 700;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <span class="eyebrow">Placar publico</span>
+        <h1>Ranking<br />Anagrama Oculto</h1>
+        <nav>
+          <a href="./index.html">Voltar</a>
+        </nav>
+      </header>
+
+      <div class="levels" id="levels"></div>
+    </main>
+
+    <script>
+      const fallbackApiUrl =
+        "https://anagrama-oculto-ranking.maycowcarrara.workers.dev";
+      const apiUrl =
+        new URLSearchParams(location.search).get("api") ||
+        localStorage.getItem("rankingApiUrl") ||
+        fallbackApiUrl;
+
+      if (apiUrl !== fallbackApiUrl) {
+        localStorage.setItem("rankingApiUrl", apiUrl);
+      }
+
+      const levels = [
+        { id: "easy", label: "Facil", color: "#60735a" },
+        { id: "medium", label: "Medio", color: "#2f5368" },
+        { id: "hard", label: "Dificil", color: "#9e2f2f" },
+      ];
+
+      const root = document.querySelector("#levels");
+      root.innerHTML = levels
+        .map(
+          (level) => `
+            <section style="--accent: ${level.color}">
+              <h2>${level.label}</h2>
+              <div class="message" data-message="${level.id}">Carregando...</div>
+              <ol data-ranking="${level.id}"></ol>
+            </section>
+          `,
+        )
+        .join("");
+
+      Promise.all(levels.map(loadLevel));
+
+      async function loadLevel(level) {
+        const list = document.querySelector(`[data-ranking="${level.id}"]`);
+        const message = document.querySelector(`[data-message="${level.id}"]`);
+
+        try {
+          const response = await fetch(`${apiUrl}/ranking?level=${level.id}`);
+          if (!response.ok) {
+            throw new Error("ranking_unavailable");
+          }
+
+          const data = await response.json();
+          const entries = Array.isArray(data.entries) ? data.entries : [];
+          message.hidden = entries.length > 0;
+          message.textContent = entries.length
+            ? ""
+            : "Ainda sem pontuacoes publicas.";
+          list.innerHTML = entries.map(renderEntry).join("");
+        } catch {
+          message.hidden = false;
+          message.textContent =
+            apiUrl === fallbackApiUrl
+              ? "Configure a URL da API do ranking nesta pagina."
+              : "Nao foi possivel carregar este ranking.";
+        }
+      }
+
+      function renderEntry(entry, index) {
+        return `
+          <li>
+            <span class="position">${index + 1}</span>
+            <span>
+              <span class="name">${escapeHtml(entry.initials)}</span>
+              <span class="meta">${entry.words} palavras · ${formatTime(
+                entry.elapsedSeconds,
+              )}</span>
+            </span>
+            <span class="score">${entry.score}</span>
+          </li>
+        `;
+      }
+
+      function formatTime(totalSeconds) {
+        const minutes = Math.floor(Number(totalSeconds || 0) / 60);
+        const seconds = String(Number(totalSeconds || 0) % 60).padStart(2, "0");
+        return `${minutes}:${seconds}`;
+      }
+
+      function escapeHtml(value) {
+        return String(value)
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;")
+          .replaceAll("'", "&#039;");
+      }
+    </script>
+  </body>
+</html>

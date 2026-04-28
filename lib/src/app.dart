@@ -1,9 +1,20 @@
 import 'package:flutter/material.dart';
+import 'package:jogopalavras/src/core/errors/app_error_reporter.dart';
+import 'package:jogopalavras/src/game/intro_preferences.dart';
 import 'package:jogopalavras/src/screens/intro_screen.dart';
+import 'package:jogopalavras/src/screens/level_screen.dart';
 import 'package:jogopalavras/src/theme/app_theme.dart';
+import 'package:jogopalavras/src/widgets/app_backdrop.dart';
 
-class WordMazeApp extends StatelessWidget {
+class WordMazeApp extends StatefulWidget {
   const WordMazeApp({super.key});
+
+  @override
+  State<WordMazeApp> createState() => _WordMazeAppState();
+}
+
+class _WordMazeAppState extends State<WordMazeApp> {
+  late final Future<bool> _hasSeenIntro = IntroPreferences.hasSeenIntro();
 
   @override
   Widget build(BuildContext context) {
@@ -11,7 +22,41 @@ class WordMazeApp extends StatelessWidget {
       title: 'Anagrama Oculto',
       theme: AppTheme.lightTheme,
       debugShowCheckedModeBanner: false,
-      home: const IntroScreen(),
+      navigatorObservers: [AppErrorReporter.instance.routeObserver],
+      home: FutureBuilder<bool>(
+        future: _hasSeenIntro,
+        builder: (context, snapshot) {
+          if (snapshot.hasError) {
+            return const IntroScreen();
+          }
+
+          if (!snapshot.hasData) {
+            return const _StartupScreen();
+          }
+
+          return snapshot.data! ? const LevelScreen() : const IntroScreen();
+        },
+      ),
+    );
+  }
+}
+
+class _StartupScreen extends StatelessWidget {
+  const _StartupScreen();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Scaffold(
+      body: AppBackdrop(
+        primary: AppTheme.pressBlue,
+        secondary: AppTheme.pressRed,
+        child: Center(
+          child: SizedBox.square(
+            dimension: 32,
+            child: CircularProgressIndicator(strokeWidth: 3),
+          ),
+        ),
+      ),
     );
   }
 }

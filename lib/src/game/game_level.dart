@@ -55,13 +55,13 @@ extension GameLevelDetails on GameLevel {
   String get sceneTitle => switch (this) {
     GameLevel.easy => 'Coluna leve',
     GameLevel.medium => 'Caderno principal',
-    GameLevel.hard => 'Edicao de domingo',
+    GameLevel.hard => 'Edição de domingo',
   };
 
   String get sceneSubtitle => switch (this) {
     GameLevel.easy => 'Cada acerto revela uma nova chamada.',
     GameLevel.medium => 'Monte palavras para fechar a manchete.',
-    GameLevel.hard => 'Complete a pagina antes do fechamento.',
+    GameLevel.hard => 'Complete a página antes do fechamento.',
   };
 
   List<Color> get sceneGradient => switch (this) {
@@ -101,9 +101,9 @@ extension GameLevelDetails on GameLevel {
   };
 
   String get soundtrackAsset => switch (this) {
-    GameLevel.easy => 'audio/easy_loop.wav',
-    GameLevel.medium => 'audio/medium_loop.wav',
-    GameLevel.hard => 'audio/hard_loop.wav',
+    GameLevel.easy => 'audio/easy_loop.mp3',
+    GameLevel.medium => 'audio/medium_loop.mp3',
+    GameLevel.hard => 'audio/hard_loop.mp3',
   };
 
   double get soundtrackVolume => switch (this) {

@@ -6,8 +6,11 @@ import 'package:flutter/services.dart';
 import 'package:jogopalavras/src/core/ads/ad_service.dart';
 import 'package:jogopalavras/src/core/audio/game_music_service.dart';
 import 'package:jogopalavras/src/game/game_level.dart';
+import 'package:jogopalavras/src/game/ranking_store.dart';
 import 'package:jogopalavras/src/game/word_bank.dart';
 import 'package:jogopalavras/src/game/word_deck.dart';
+import 'package:jogopalavras/src/navigation/app_page_route.dart';
+import 'package:jogopalavras/src/screens/ranking_screen.dart';
 import 'package:jogopalavras/src/theme/app_theme.dart';
 import 'package:jogopalavras/src/widgets/ad_banner_slot.dart';
 import 'package:jogopalavras/src/widgets/app_backdrop.dart';
@@ -22,13 +25,118 @@ class GameScreen extends StatefulWidget {
   State<GameScreen> createState() => _GameScreenState();
 }
 
+enum _VictoryAction { back, ranking, replay }
+
+class _InitialsDialog extends StatefulWidget {
+  const _InitialsDialog({required this.score, required this.words});
+
+  final int score;
+  final int words;
+
+  @override
+  State<_InitialsDialog> createState() => _InitialsDialogState();
+}
+
+class _InitialsDialogState extends State<_InitialsDialog> {
+  late final TextEditingController _controller;
+  String _currentInitials = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _handleChanged(String value) {
+    final nextInitials = value.toUpperCase();
+    if (_controller.text != nextInitials) {
+      _controller.value = TextEditingValue(
+        text: nextInitials,
+        selection: TextSelection.collapsed(offset: nextInitials.length),
+      );
+    }
+
+    setState(() {
+      _currentInitials = nextInitials;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return PopScope(
+      canPop: false,
+      child: AlertDialog(
+        backgroundColor: AppTheme.card,
+        shape: RoundedRectangleBorder(
+          side: const BorderSide(color: AppTheme.rule),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        title: const Text(
+          'Assine o placar',
+          style: TextStyle(fontWeight: FontWeight.w900),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Você fez ${widget.score} pontos com ${widget.words} acertos. Digite 3 letras para salvar no ranking.',
+              style: const TextStyle(height: 1.35),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _controller,
+              autofocus: true,
+              textAlign: TextAlign.center,
+              textCapitalization: TextCapitalization.characters,
+              maxLength: 3,
+              inputFormatters: [
+                FilteringTextInputFormatter.allow(RegExp('[a-zA-Z]')),
+                LengthLimitingTextInputFormatter(3),
+              ],
+              style: const TextStyle(
+                fontSize: 28,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 6,
+              ),
+              decoration: const InputDecoration(
+                counterText: '',
+                hintText: 'ABC',
+                border: OutlineInputBorder(),
+              ),
+              onChanged: _handleChanged,
+            ),
+          ],
+        ),
+        actions: [
+          ElevatedButton(
+            onPressed: _currentInitials.length == 3
+                ? () => Navigator.of(context).pop(_currentInitials)
+                : null,
+            child: const Text('Salvar'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
-  static const int _goalScore = 100;
+  static const int _goalScore = 150;
   static const int _pointsPerHit = 10;
   static const int _pointsPerHintHit = 6;
   static const int _pointsPerError = 5;
+  static const int _maxSpeedBonus = 10;
   static const int _progressFragments = 10;
   static const Duration _hintDelay = Duration(seconds: 22);
+  static const Duration _typewriterTick = Duration(milliseconds: 78);
+  static const Duration _hitCelebrationHold = Duration(milliseconds: 900);
 
   late final WordDeck<WordEntry> _wordDeck;
   late final Random _random;
@@ -46,6 +154,10 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   bool _hintSuggested = false;
   bool _hintRevealed = false;
   bool _musicEnabled = true;
+  bool _isHitCelebrating = false;
+  String _typedHitWord = '';
+  DateTime _gameStartedAt = DateTime.now();
+  DateTime _wordStartedAt = DateTime.now();
   Offset? _dragPosition;
 
   @override
@@ -120,6 +232,9 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       _roundErrors = 0;
       _hintSuggested = false;
       _hintRevealed = false;
+      _isHitCelebrating = false;
+      _typedHitWord = '';
+      _wordStartedAt = DateTime.now();
     });
     _scheduleHintPrompt();
   }
@@ -149,6 +264,10 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   }
 
   void _handleDrag(Offset localPosition, _BoardMetrics metrics) {
+    if (_isHitCelebrating) {
+      return;
+    }
+
     final index = metrics.indexFor(localPosition);
 
     setState(() {
@@ -167,22 +286,54 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _onDragEnd() async {
+    if (_isHitCelebrating) {
+      return;
+    }
+
     if (_currentWord.isEmpty) {
       setState(() => _dragPosition = null);
       return;
     }
 
     if (_currentWord == _targetWord) {
-      final earnedPoints = _hintRevealed ? _pointsPerHintHit : _pointsPerHit;
+      _hintTimer?.cancel();
+      final completedWord = _targetWord;
+      final speedBonus = _speedBonusFor(
+        DateTime.now().difference(_wordStartedAt),
+      );
+      final earnedPoints =
+          (_hintRevealed ? _pointsPerHintHit : _pointsPerHit) +
+          (_hintRevealed ? speedBonus ~/ 2 : speedBonus);
       setState(() {
         _dragPosition = null;
         _score += earnedPoints;
-        _discoveredWords = [_targetWord, ..._discoveredWords];
+        _discoveredWords = [completedWord, ..._discoveredWords];
+        _isHitCelebrating = true;
+        _typedHitWord = '';
       });
 
+      await _playHitCelebration(completedWord);
+      if (!mounted) {
+        return;
+      }
+
       if (_score >= _goalScore) {
-        _hintTimer?.cancel();
-        await _showVictoryDialog();
+        final entry = await _showInitialsDialog();
+        if (entry == null || !mounted) {
+          return;
+        }
+
+        final ranking = await RankingStore.instance.saveEntry(entry);
+        if (!mounted) {
+          return;
+        }
+
+        final action = await _showVictoryDialog(entry, ranking);
+        if (!mounted || action == null) {
+          return;
+        }
+
+        await _handleVictoryAction(action);
       } else {
         _generateRound();
       }
@@ -200,8 +351,93 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     });
   }
 
-  Future<void> _showVictoryDialog() async {
-    await showDialog<void>(
+  int _speedBonusFor(Duration elapsed) {
+    final seconds = elapsed.inSeconds;
+    if (seconds <= 5) {
+      return _maxSpeedBonus;
+    }
+    if (seconds <= 10) {
+      return 8;
+    }
+    if (seconds <= 15) {
+      return 6;
+    }
+    if (seconds <= 22) {
+      return 4;
+    }
+    if (seconds <= 30) {
+      return 2;
+    }
+    return 0;
+  }
+
+  Future<void> _playHitCelebration(String word) async {
+    for (var i = 1; i <= word.length; i++) {
+      await Future<void>.delayed(_typewriterTick);
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _typedHitWord = word.substring(0, i);
+      });
+    }
+
+    await Future<void>.delayed(_hitCelebrationHold);
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _isHitCelebrating = false;
+    });
+  }
+
+  Future<RankingEntry?> _showInitialsDialog() async {
+    final completedEntry = RankingEntry(
+      initials: '',
+      level: widget.level,
+      score: _score,
+      words: _discoveredWords.length,
+      elapsedSeconds: DateTime.now().difference(_gameStartedAt).inSeconds,
+      completedAt: DateTime.now(),
+    );
+
+    final initials = await showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => _InitialsDialog(
+        score: completedEntry.score,
+        words: completedEntry.words,
+      ),
+    );
+
+    if (initials == null) {
+      return null;
+    }
+
+    return RankingEntry(
+      initials: initials,
+      level: completedEntry.level,
+      score: completedEntry.score,
+      words: completedEntry.words,
+      elapsedSeconds: completedEntry.elapsedSeconds,
+      completedAt: completedEntry.completedAt,
+    );
+  }
+
+  Future<_VictoryAction?> _showVictoryDialog(
+    RankingEntry entry,
+    List<RankingEntry> ranking,
+  ) async {
+    final position =
+        ranking.indexWhere(
+          (candidate) =>
+              candidate.initials == entry.initials &&
+              candidate.completedAt == entry.completedAt,
+        ) +
+        1;
+
+    return showDialog<_VictoryAction>(
       context: context,
       barrierDismissible: false,
       builder: (_) {
@@ -238,42 +474,62 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
             ],
           ),
           content: Text(
-            'Você encontrou ${_discoveredWords.length} palavras e somou $_score pontos. Quer começar outra rodada?',
+            'Você fez ${entry.words} acertos, somou ${entry.score} pontos e entrou no ranking${position > 0 ? ' em #$position' : ''}. Quer começar outra rodada?',
             style: const TextStyle(height: 1.4),
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.of(context)
-                ..pop()
-                ..pop(),
+              onPressed: () => Navigator.of(context).pop(_VictoryAction.back),
               child: const Text('Voltar'),
             ),
+            TextButton.icon(
+              onPressed: () =>
+                  Navigator.of(context).pop(_VictoryAction.ranking),
+              icon: const Icon(Icons.leaderboard_rounded, size: 18),
+              label: const Text('Ranking'),
+            ),
             ElevatedButton(
-              onPressed: () async {
-                Navigator.of(context).pop();
-                await AdService.instance.registerNaturalBreak();
-                if (!mounted) {
-                  return;
-                }
-                setState(() {
-                  _score = 0;
-                  _discoveredWords = <String>[];
-                  _currentWord = '';
-                  _selectedIndices = <int>[];
-                  _dragPosition = null;
-                  _hasError = false;
-                  _roundErrors = 0;
-                  _hintSuggested = false;
-                  _hintRevealed = false;
-                });
-                _generateRound();
-              },
+              onPressed: () => Navigator.of(context).pop(_VictoryAction.replay),
               child: const Text('Jogar de novo'),
             ),
           ],
         );
       },
     );
+  }
+
+  Future<void> _handleVictoryAction(_VictoryAction action) async {
+    switch (action) {
+      case _VictoryAction.back:
+        Navigator.of(context).pop();
+      case _VictoryAction.ranking:
+        await Navigator.of(context).pushReplacement(
+          appPageRoute<void>(
+            settings: const RouteSettings(name: '/ranking'),
+            builder: (_) => RankingScreen(initialLevel: widget.level),
+          ),
+        );
+      case _VictoryAction.replay:
+        await AdService.instance.registerNaturalBreak();
+        if (!mounted) {
+          return;
+        }
+        setState(() {
+          _score = 0;
+          _discoveredWords = <String>[];
+          _currentWord = '';
+          _selectedIndices = <int>[];
+          _dragPosition = null;
+          _hasError = false;
+          _roundErrors = 0;
+          _hintSuggested = false;
+          _hintRevealed = false;
+          _isHitCelebrating = false;
+          _typedHitWord = '';
+          _gameStartedAt = DateTime.now();
+        });
+        _generateRound();
+    }
   }
 
   @override
@@ -345,67 +601,108 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                           ),
                         ),
                         SizedBox(height: layout.sectionGap),
-                        RevealOnMount(
-                          delay: const Duration(milliseconds: 80),
-                          child: SizedBox(
-                            height: layout.showcaseHeight,
-                            child: _RoundShowcaseCard(
-                              level: widget.level,
-                              currentWord: _currentWord,
-                              targetWordLength: _targetWord.length,
-                              hint: _currentHint,
-                              hintSuggested: _hintSuggested,
-                              hintRevealed: _hintRevealed,
-                              hintedHitPoints: _pointsPerHintHit,
-                              hasError: _hasError,
-                              revealedFragments: revealedFragments,
-                              totalFragments: _progressFragments,
-                              discoveredCount: _discoveredWords.length,
-                              compact: layout.compact,
-                              musicEnabled: _musicEnabled,
-                              onToggleMusic: _toggleMusic,
-                              onRevealHint: _revealHint,
-                            ),
-                          ),
-                        ),
-                        SizedBox(height: layout.sectionGap),
                         Expanded(
                           child: LayoutBuilder(
                             builder: (context, contentConstraints) {
-                              final boardSize = min(
+                              final gap = layout.contentGap;
+                              final maxMiddleHeight =
+                                  contentConstraints.maxHeight;
+                              final statusHeight = min(
+                                layout.statusHeight,
+                                max(68.0, maxMiddleHeight * 0.18),
+                              );
+                              final targetBoardSize = min(
                                 contentConstraints.maxWidth,
-                                contentConstraints.maxHeight,
+                                maxMiddleHeight * layout.boardHeightFactor,
+                              );
+                              final maxBoardWithScene = max(
+                                layout.minBoardSize,
+                                maxMiddleHeight -
+                                    statusHeight -
+                                    (gap * 2) -
+                                    layout.minSceneHeight,
+                              );
+                              final boardSize = min(
+                                targetBoardSize,
+                                maxBoardWithScene,
+                              );
+                              final sceneHeight = max(
+                                72.0,
+                                maxMiddleHeight -
+                                    boardSize -
+                                    statusHeight -
+                                    (gap * 2),
                               );
 
-                              return Padding(
-                                padding: EdgeInsets.only(
-                                  top: layout.boardTopInset,
-                                ),
-                                child: RevealOnMount(
-                                  delay: const Duration(milliseconds: 150),
-                                  child: Align(
-                                    alignment: Alignment.topCenter,
-                                    child: SizedBox.square(
-                                      dimension: boardSize,
-                                      child: _GridBoard(
-                                        grid: _grid,
-                                        selectedIndices: _selectedIndices,
-                                        hasError: _hasError,
-                                        dragPosition: _dragPosition,
-                                        gridSize: widget.level.gridSize,
-                                        accent: widget.level.accent,
-                                        compact: layout.compact,
-                                        onPanStart: _handleDrag,
-                                        onPanUpdate: _handleDrag,
-                                        onPanEnd: _onDragEnd,
+                              return Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  RevealOnMount(
+                                    delay: const Duration(milliseconds: 80),
+                                    child: SizedBox(
+                                      height: sceneHeight,
+                                      child: _ScenePreview(
+                                        level: widget.level,
+                                        revealedFragments: revealedFragments,
+                                        totalFragments: _progressFragments,
                                       ),
                                     ),
                                   ),
-                                ),
+                                  SizedBox(height: gap),
+                                  RevealOnMount(
+                                    delay: const Duration(milliseconds: 120),
+                                    child: SizedBox(
+                                      height: statusHeight,
+                                      child: _RoundShowcaseCard(
+                                        level: widget.level,
+                                        currentWord: _currentWord,
+                                        targetWordLength: _targetWord.length,
+                                        hint: _currentHint,
+                                        hintSuggested: _hintSuggested,
+                                        hintRevealed: _hintRevealed,
+                                        hintedHitPoints: _pointsPerHintHit,
+                                        hasError: _hasError,
+                                        isHitCelebrating: _isHitCelebrating,
+                                        typedHitWord: _typedHitWord,
+                                        score: _score,
+                                        goalScore: _goalScore,
+                                        discoveredCount:
+                                            _discoveredWords.length,
+                                        compact: layout.compact,
+                                        musicEnabled: _musicEnabled,
+                                        onToggleMusic: _toggleMusic,
+                                        onRevealHint: _revealHint,
+                                      ),
+                                    ),
+                                  ),
+                                  SizedBox(height: gap),
+                                  RevealOnMount(
+                                    delay: const Duration(milliseconds: 160),
+                                    child: Align(
+                                      alignment: Alignment.bottomCenter,
+                                      child: SizedBox.square(
+                                        dimension: boardSize,
+                                        child: _GridBoard(
+                                          grid: _grid,
+                                          selectedIndices: _selectedIndices,
+                                          hasError: _hasError,
+                                          dragPosition: _dragPosition,
+                                          gridSize: widget.level.gridSize,
+                                          accent: widget.level.accent,
+                                          compact: layout.compact,
+                                          onPanStart: _handleDrag,
+                                          onPanUpdate: _handleDrag,
+                                          onPanEnd: _onDragEnd,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               );
                             },
                           ),
                         ),
+                        SizedBox(height: layout.bannerGap),
                         AdBannerSlot(compact: layout.compact),
                       ],
                     ),
@@ -553,8 +850,10 @@ class _RoundShowcaseCard extends StatelessWidget {
     required this.hintRevealed,
     required this.hintedHitPoints,
     required this.hasError,
-    required this.revealedFragments,
-    required this.totalFragments,
+    required this.isHitCelebrating,
+    required this.typedHitWord,
+    required this.score,
+    required this.goalScore,
     required this.discoveredCount,
     required this.compact,
     required this.musicEnabled,
@@ -570,8 +869,10 @@ class _RoundShowcaseCard extends StatelessWidget {
   final bool hintRevealed;
   final int hintedHitPoints;
   final bool hasError;
-  final int revealedFragments;
-  final int totalFragments;
+  final bool isHitCelebrating;
+  final String typedHitWord;
+  final int score;
+  final int goalScore;
   final int discoveredCount;
   final bool compact;
   final bool musicEnabled;
@@ -580,241 +881,359 @@ class _RoundShowcaseCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final displayWord = isHitCelebrating ? typedHitWord : currentWord;
     final currentText = List<String>.generate(targetWordLength, (index) {
-      if (index < currentWord.length) {
-        return currentWord[index];
+      if (index < displayWord.length) {
+        return displayWord[index];
       }
 
       return '•';
     }).join(' ');
+    final typingText = isHitCelebrating ? '$currentText ▌' : currentText;
     final showHintControl = hintSuggested || hintRevealed;
+    final progressText = '$score/$goalScore pontos';
 
-    return Container(
-      padding: EdgeInsets.all(compact ? 14 : 16),
-      decoration: BoxDecoration(
-        color: AppTheme.card.withValues(alpha: 0.96),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppTheme.rule.withValues(alpha: 0.9)),
-        boxShadow: [
-          BoxShadow(
-            color: AppTheme.midnight.withValues(alpha: 0.08),
-            blurRadius: 14,
-            offset: const Offset(0, 8),
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Container(
+          padding: EdgeInsets.all(compact ? 14 : 16),
+          decoration: BoxDecoration(
+            color: isHitCelebrating
+                ? AppTheme.card.withValues(alpha: 0.99)
+                : AppTheme.card.withValues(alpha: 0.96),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: isHitCelebrating
+                  ? AppTheme.pressGold.withValues(alpha: 0.72)
+                  : AppTheme.rule.withValues(alpha: 0.9),
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: isHitCelebrating
+                    ? AppTheme.pressGold.withValues(alpha: 0.2)
+                    : AppTheme.midnight.withValues(alpha: 0.08),
+                blurRadius: isHitCelebrating ? 20 : 14,
+                offset: const Offset(0, 8),
+              ),
+            ],
           ),
-        ],
-      ),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final ultraCompact =
-              constraints.maxHeight < 126 || constraints.maxWidth < 360;
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final ultraCompact =
+                  constraints.maxHeight < 142 || constraints.maxWidth < 360;
 
-          if (ultraCompact) {
-            return Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.start,
+              if (ultraCompact) {
+                if (constraints.maxHeight < 58) {
+                  return Row(
                     children: [
-                      Row(
+                      Expanded(
+                        flex: 4,
+                        child: Text(
+                          level.sceneTitle,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: AppTheme.midnight,
+                            fontWeight: FontWeight.w900,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        flex: 5,
+                        child: AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 180),
+                          child: Text(
+                            isHitCelebrating ? typingText : progressText,
+                            key: ValueKey<String>(
+                              '$typingText-$score-$goalScore-$isHitCelebrating',
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: isHitCelebrating
+                                  ? AppTheme.pressRed
+                                  : hasError
+                                  ? AppTheme.pressRed
+                                  : AppTheme.midnight,
+                              fontWeight: FontWeight.w900,
+                              fontSize: 15,
+                              letterSpacing: 0,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      _MusicToggleButton(
+                        enabled: musicEnabled,
+                        onPressed: onToggleMusic,
+                        size: 32,
+                      ),
+                    ],
+                  );
+                }
+
+                return Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Expanded(
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  level.sceneTitle,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    color: AppTheme.midnight,
+                                    fontWeight: FontWeight.w900,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              _MusicToggleButton(
+                                enabled: musicEnabled,
+                                onPressed: onToggleMusic,
+                                size: 34,
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          AnimatedSwitcher(
+                            duration: const Duration(milliseconds: 180),
                             child: Text(
-                              level.sceneTitle,
+                              isHitCelebrating
+                                  ? typingText
+                                  : '$currentText  •  $progressText',
+                              key: ValueKey<String>(
+                                '$typingText-$score-$goalScore-$isHitCelebrating',
+                              ),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: AppTheme.midnight,
+                              style: TextStyle(
+                                color: isHitCelebrating
+                                    ? AppTheme.pressRed
+                                    : hasError
+                                    ? AppTheme.pressRed
+                                    : AppTheme.midnight,
                                 fontWeight: FontWeight.w900,
-                                fontSize: 14,
+                                fontSize: 16,
+                                letterSpacing: 0,
                               ),
                             ),
                           ),
-                          const SizedBox(width: 8),
-                          _MusicToggleButton(
-                            enabled: musicEnabled,
-                            onPressed: onToggleMusic,
-                            size: 34,
-                          ),
+                          if (showHintControl) ...[
+                            const SizedBox(height: 6),
+                            _HintPanel(
+                              hint: hint,
+                              suggested: hintSuggested,
+                              revealed: hintRevealed,
+                              hintedHitPoints: hintedHitPoints,
+                              compact: true,
+                              dense: true,
+                              onPressed: onRevealHint,
+                            ),
+                          ],
                         ],
                       ),
-                      const SizedBox(height: 6),
-                      AnimatedSwitcher(
-                        duration: const Duration(milliseconds: 180),
-                        child: Text(
-                          '$currentText  •  $revealedFragments/$totalFragments',
-                          key: ValueKey<String>(
-                            '$currentText-$revealedFragments',
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: hasError
-                                ? AppTheme.pressRed
-                                : AppTheme.midnight,
-                            fontWeight: FontWeight.w900,
-                            fontSize: 16,
-                            letterSpacing: 0,
-                          ),
-                        ),
-                      ),
-                      if (showHintControl) ...[
-                        const SizedBox(height: 6),
-                        _HintPanel(
-                          hint: hint,
-                          suggested: hintSuggested,
-                          revealed: hintRevealed,
-                          hintedHitPoints: hintedHitPoints,
-                          compact: true,
-                          dense: true,
-                          onPressed: onRevealHint,
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 10),
-                SizedBox(
-                  width: 74,
-                  height: double.infinity,
-                  child: _ScenePreview(
-                    level: level,
-                    revealedFragments: revealedFragments,
-                    totalFragments: totalFragments,
-                  ),
-                ),
-              ],
-            );
-          }
+                    ),
+                  ],
+                );
+              }
 
-          return Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
+              return Row(
+                children: [
+                  Expanded(
+                    child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                level.sceneTitle,
-                                style: TextStyle(
-                                  color: AppTheme.midnight,
-                                  fontWeight: FontWeight.w900,
-                                  fontSize: compact ? 15 : 16,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                level.sceneSubtitle,
-                                maxLines: compact ? 2 : 3,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  color: AppTheme.ink.withValues(alpha: 0.76),
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: compact ? 11.5 : 12.5,
-                                  height: 1.25,
-                                ),
-                              ),
-                              const SizedBox(height: 6),
-                              if (showHintControl)
-                                _HintPanel(
-                                  hint: hint,
-                                  suggested: hintSuggested,
-                                  revealed: hintRevealed,
-                                  hintedHitPoints: hintedHitPoints,
-                                  compact: compact,
-                                  onPressed: onRevealHint,
-                                )
-                              else
-                                Text(
-                                  musicEnabled
-                                      ? 'Trilha: ${level.soundtrackLabel}'
-                                      : 'Trilha pausada',
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    color: musicEnabled
-                                        ? AppTheme.pressBlue
-                                        : AppTheme.ink.withValues(alpha: 0.6),
-                                    fontWeight: FontWeight.w800,
-                                    fontSize: compact ? 11 : 12,
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    level.sceneTitle,
+                                    style: TextStyle(
+                                      color: AppTheme.midnight,
+                                      fontWeight: FontWeight.w900,
+                                      fontSize: compact ? 15 : 16,
+                                    ),
                                   ),
-                                ),
-                            ],
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    level.sceneSubtitle,
+                                    maxLines: compact ? 2 : 3,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      color: AppTheme.ink.withValues(
+                                        alpha: 0.76,
+                                      ),
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: compact ? 11.5 : 12.5,
+                                      height: 1.25,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  if (showHintControl)
+                                    _HintPanel(
+                                      hint: hint,
+                                      suggested: hintSuggested,
+                                      revealed: hintRevealed,
+                                      hintedHitPoints: hintedHitPoints,
+                                      compact: compact,
+                                      onPressed: onRevealHint,
+                                    )
+                                  else
+                                    Text(
+                                      musicEnabled
+                                          ? 'Trilha: ${level.soundtrackLabel}'
+                                          : 'Trilha pausada',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        color: musicEnabled
+                                            ? AppTheme.pressBlue
+                                            : AppTheme.ink.withValues(
+                                                alpha: 0.6,
+                                              ),
+                                        fontWeight: FontWeight.w800,
+                                        fontSize: compact ? 11 : 12,
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            _MusicToggleButton(
+                              enabled: musicEnabled,
+                              onPressed: onToggleMusic,
+                            ),
+                          ],
+                        ),
+                        const Spacer(),
+                        Text(
+                          isHitCelebrating ? 'Na rotativa' : 'Montagem atual',
+                          style: TextStyle(
+                            color: isHitCelebrating
+                                ? AppTheme.pressRed
+                                : AppTheme.ink.withValues(alpha: 0.66),
+                            fontWeight: FontWeight.w700,
+                            fontSize: compact ? 11 : 12,
                           ),
                         ),
-                        const SizedBox(width: 8),
-                        _MusicToggleButton(
-                          enabled: musicEnabled,
-                          onPressed: onToggleMusic,
+                        const SizedBox(height: 4),
+                        AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 180),
+                          child: Text(
+                            typingText,
+                            key: ValueKey<String>(
+                              '$typingText-$isHitCelebrating',
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: isHitCelebrating
+                                  ? AppTheme.pressRed
+                                  : hasError
+                                  ? AppTheme.pressRed
+                                  : AppTheme.midnight,
+                              fontWeight: FontWeight.w900,
+                              fontSize: compact ? 20 : 22,
+                              letterSpacing: 0,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            _ShowcasePill(
+                              icon: Icons.article_outlined,
+                              label: progressText,
+                            ),
+                            _ShowcasePill(
+                              icon: Icons.check_circle_rounded,
+                              label: '$discoveredCount acertos',
+                            ),
+                          ],
                         ),
                       ],
                     ),
-                    const Spacer(),
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
+        _HitCelebrationBadge(visible: isHitCelebrating),
+      ],
+    );
+  }
+}
+
+class _HitCelebrationBadge extends StatelessWidget {
+  const _HitCelebrationBadge({required this.visible});
+
+  final bool visible;
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned(
+      top: -8,
+      right: 12,
+      child: IgnorePointer(
+        child: AnimatedOpacity(
+          opacity: visible ? 1 : 0,
+          duration: const Duration(milliseconds: 120),
+          child: AnimatedScale(
+            scale: visible ? 1 : 0.86,
+            duration: const Duration(milliseconds: 180),
+            curve: Curves.easeOutBack,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: AppTheme.pressRed,
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(color: AppTheme.card, width: 2),
+                boxShadow: [
+                  BoxShadow(
+                    color: AppTheme.pressRed.withValues(alpha: 0.26),
+                    blurRadius: 16,
+                    offset: const Offset(0, 6),
+                  ),
+                ],
+              ),
+              child: const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.check_rounded, color: Colors.white, size: 14),
+                    SizedBox(width: 4),
                     Text(
-                      'Montagem atual',
+                      'ACERTO!',
                       style: TextStyle(
-                        color: AppTheme.ink.withValues(alpha: 0.66),
-                        fontWeight: FontWeight.w700,
-                        fontSize: compact ? 11 : 12,
+                        color: Colors.white,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 11,
+                        letterSpacing: 0,
                       ),
-                    ),
-                    const SizedBox(height: 4),
-                    AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 180),
-                      child: Text(
-                        currentText,
-                        key: ValueKey<String>(currentText),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: hasError
-                              ? AppTheme.pressRed
-                              : AppTheme.midnight,
-                          fontWeight: FontWeight.w900,
-                          fontSize: compact ? 20 : 22,
-                          letterSpacing: 0,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
-                        _ShowcasePill(
-                          icon: Icons.article_outlined,
-                          label: '$revealedFragments/$totalFragments revelados',
-                        ),
-                        _ShowcasePill(
-                          icon: Icons.check_circle_rounded,
-                          label: '$discoveredCount acertos',
-                        ),
-                      ],
                     ),
                   ],
                 ),
               ),
-              SizedBox(width: compact ? 12 : 16),
-              AspectRatio(
-                aspectRatio: 0.9,
-                child: SizedBox(
-                  width: compact ? 118 : 132,
-                  child: _ScenePreview(
-                    level: level,
-                    revealedFragments: revealedFragments,
-                    totalFragments: totalFragments,
-                  ),
-                ),
-              ),
-            ],
-          );
-        },
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -842,43 +1261,48 @@ class _HintPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (revealed) {
-      return Container(
-        padding: EdgeInsets.symmetric(
-          horizontal: dense ? 8 : 10,
-          vertical: dense ? 6 : 7,
-        ),
-        decoration: BoxDecoration(
-          color: AppTheme.pressGold.withValues(alpha: 0.14),
-          borderRadius: BorderRadius.circular(7),
-          border: Border.all(color: AppTheme.pressGold.withValues(alpha: 0.34)),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              Icons.lightbulb_outline_rounded,
-              color: AppTheme.pressGold,
-              size: dense ? 13 : 14,
+      return SizedBox(
+        width: double.infinity,
+        child: Container(
+          padding: EdgeInsets.symmetric(
+            horizontal: dense ? 8 : 10,
+            vertical: dense ? 6 : 7,
+          ),
+          decoration: BoxDecoration(
+            color: AppTheme.pressGold.withValues(alpha: 0.14),
+            borderRadius: BorderRadius.circular(7),
+            border: Border.all(
+              color: AppTheme.pressGold.withValues(alpha: 0.34),
             ),
-            const SizedBox(width: 6),
-            Flexible(
-              child: Text(
-                'Dica: $hint',
-                maxLines: dense ? 1 : 2,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: AppTheme.midnight,
-                  fontWeight: FontWeight.w800,
-                  fontSize: dense
-                      ? 10.5
-                      : compact
-                      ? 11
-                      : 12,
-                  height: 1.15,
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(
+                Icons.lightbulb_outline_rounded,
+                color: AppTheme.pressGold,
+                size: dense ? 13 : 14,
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  'Dica: $hint',
+                  maxLines: dense ? 2 : 3,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: AppTheme.midnight,
+                    fontWeight: FontWeight.w800,
+                    fontSize: dense
+                        ? 10.5
+                        : compact
+                        ? 11
+                        : 12,
+                    height: 1.18,
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       );
     }
@@ -956,12 +1380,25 @@ class _ScenePreview extends StatelessWidget {
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(10),
-        child: CustomPaint(
-          painter: _ScenePreviewPainter(
-            level: level,
-            revealedFragments: revealedFragments,
-            totalFragments: totalFragments,
+        child: TweenAnimationBuilder<double>(
+          tween: Tween<double>(
+            begin: 0,
+            end: totalFragments <= 0
+                ? 0
+                : (revealedFragments / totalFragments).clamp(0.0, 1.0),
           ),
+          duration: const Duration(milliseconds: 520),
+          curve: Curves.easeOutCubic,
+          builder: (context, completion, child) {
+            return CustomPaint(
+              painter: _ScenePreviewPainter(
+                level: level,
+                completion: completion,
+                totalFragments: totalFragments,
+              ),
+              child: child,
+            );
+          },
           child: const SizedBox.expand(),
         ),
       ),
@@ -972,12 +1409,12 @@ class _ScenePreview extends StatelessWidget {
 class _ScenePreviewPainter extends CustomPainter {
   const _ScenePreviewPainter({
     required this.level,
-    required this.revealedFragments,
+    required this.completion,
     required this.totalFragments,
   });
 
   final GameLevel level;
-  final int revealedFragments;
+  final double completion;
   final int totalFragments;
 
   @override
@@ -1003,8 +1440,12 @@ class _ScenePreviewPainter extends CustomPainter {
     final pageRadius = Radius.circular(max(5.0, size.shortestSide * 0.08));
 
     canvas.drawRRect(
+      RRect.fromRectAndRadius(page.translate(2, 2), pageRadius),
+      Paint()..color = AppTheme.midnight.withValues(alpha: 0.1),
+    );
+    canvas.drawRRect(
       RRect.fromRectAndRadius(page, pageRadius),
-      Paint()..color = AppTheme.card.withValues(alpha: 0.82),
+      Paint()..color = AppTheme.card.withValues(alpha: 0.9),
     );
     canvas.drawRRect(
       RRect.fromRectAndRadius(page, pageRadius),
@@ -1015,142 +1456,386 @@ class _ScenePreviewPainter extends CustomPainter {
     );
 
     final inner = page.deflate(max(5.0, size.shortestSide * 0.08));
-    final headerHeight = max(5.0, inner.height * 0.11);
+    final foldPaint = Paint()
+      ..color = AppTheme.midnight.withValues(alpha: 0.08)
+      ..strokeWidth = 1;
+    canvas.drawLine(
+      Offset(page.left + (page.width * 0.52), page.top + 2),
+      Offset(page.left + (page.width * 0.52), page.bottom - 2),
+      foldPaint,
+    );
+
+    final headerHeight = max(12.0, inner.height * 0.16);
     final header = Rect.fromLTWH(
       inner.left,
       inner.top,
       inner.width,
       headerHeight,
     );
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(header, Radius.circular(headerHeight * 0.42)),
-      Paint()..color = level.accent.withValues(alpha: 0.62),
-    );
+    _drawMasthead(canvas, header);
 
     final storyArea = Rect.fromLTWH(
       inner.left,
-      header.bottom + max(5.0, inner.height * 0.06),
+      header.bottom + max(4.0, inner.height * 0.05),
       inner.width,
-      inner.height * 0.58,
+      inner.height * 0.74,
     );
-    _drawStoryBlocks(canvas, storyArea);
-
-    final markerArea = Rect.fromLTWH(
-      inner.left,
-      page.bottom - max(17.0, page.height * 0.2),
-      inner.width,
-      max(10.0, page.height * 0.12),
-    );
-    _drawProgressMarkers(canvas, markerArea);
+    _drawStorySections(canvas, storyArea);
   }
 
-  void _drawStoryBlocks(Canvas canvas, Rect area) {
-    final photoWidth = area.width * 0.38;
-    final photo = Rect.fromLTWH(
-      area.left,
-      area.top,
-      photoWidth,
-      area.height * 0.74,
-    );
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        photo,
-        Radius.circular(max(4.0, photo.width * 0.12)),
-      ),
-      Paint()..color = level.accent.withValues(alpha: 0.2),
-    );
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        photo.deflate(1),
-        Radius.circular(max(3.0, photo.width * 0.1)),
-      ),
-      Paint()
-        ..color = AppTheme.midnight.withValues(alpha: 0.08)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1,
-    );
-
-    final contentLeft = photo.right + max(5.0, area.width * 0.08);
-    final contentWidth = area.right - contentLeft;
-    final linePaint = Paint()
-      ..color = AppTheme.midnight.withValues(alpha: 0.34)
+  void _drawMasthead(Canvas canvas, Rect header) {
+    final rulePaint = Paint()
+      ..color = AppTheme.midnight.withValues(alpha: 0.54)
       ..strokeCap = StrokeCap.round
-      ..strokeWidth = max(2.0, area.height * 0.05);
+      ..strokeWidth = max(0.8, header.height * 0.07);
+    canvas.drawLine(header.topLeft, header.topRight, rulePaint);
+    canvas.drawLine(header.bottomLeft, header.bottomRight, rulePaint);
 
-    final rows = min(4, max(2, (area.height / 13).floor()));
-    for (var i = 0; i < rows; i++) {
-      final y = area.top + (i * area.height * 0.18);
-      final widthFactor = i.isEven ? 1.0 : 0.74;
-      canvas.drawLine(
-        Offset(contentLeft, y),
-        Offset(contentLeft + (contentWidth * widthFactor), y),
-        linePaint,
-      );
-    }
+    final titlePainter = TextPainter(
+      text: TextSpan(
+        text: 'JORNAL',
+        style: TextStyle(
+          color: AppTheme.midnight.withValues(alpha: 0.82),
+          fontFamily: 'Georgia',
+          fontFamilyFallback: AppTheme.serifFallback,
+          fontSize: max(7.0, header.height * 0.42),
+          fontWeight: FontWeight.w900,
+          letterSpacing: 0,
+        ),
+      ),
+      maxLines: 1,
+      textDirection: TextDirection.ltr,
+    )..layout(maxWidth: header.width * 0.52);
+    titlePainter.paint(
+      canvas,
+      Offset(
+        header.center.dx - (titlePainter.width / 2),
+        header.center.dy - (titlePainter.height / 2),
+      ),
+    );
 
-    final footerLinePaint = Paint()
+    final ornamentPaint = Paint()
+      ..color = level.accent.withValues(alpha: 0.66)
+      ..strokeCap = StrokeCap.round
+      ..strokeWidth = max(1.0, header.height * 0.09);
+    final ornamentWidth = max(5.0, header.width * 0.17);
+    final gap = max(5.0, header.width * 0.06);
+    canvas.drawLine(
+      Offset(header.left, header.center.dy),
+      Offset(
+        min(header.center.dx - gap, header.left + ornamentWidth),
+        header.center.dy,
+      ),
+      ornamentPaint,
+    );
+    canvas.drawLine(
+      Offset(
+        max(header.center.dx + gap, header.right - ornamentWidth),
+        header.center.dy,
+      ),
+      Offset(header.right, header.center.dy),
+      ornamentPaint,
+    );
+
+    final datePaint = Paint()
       ..color = AppTheme.midnight.withValues(alpha: 0.18)
       ..strokeCap = StrokeCap.round
-      ..strokeWidth = max(1.6, area.height * 0.04);
-    final footerTop = area.top + area.height * 0.82;
+      ..strokeWidth = max(0.8, header.height * 0.05);
     canvas.drawLine(
-      Offset(area.left, footerTop),
-      Offset(area.right, footerTop),
-      footerLinePaint,
+      Offset(header.left, header.top + header.height * 0.28),
+      Offset(
+        header.left + header.width * 0.22,
+        header.top + header.height * 0.28,
+      ),
+      datePaint,
     );
     canvas.drawLine(
-      Offset(area.left, footerTop + max(5.0, area.height * 0.12)),
       Offset(
-        area.left + (area.width * 0.72),
-        footerTop + max(5.0, area.height * 0.12),
+        header.right - header.width * 0.2,
+        header.top + header.height * 0.72,
       ),
-      footerLinePaint,
+      Offset(header.right, header.top + header.height * 0.72),
+      datePaint,
     );
   }
 
-  void _drawProgressMarkers(Canvas canvas, Rect area) {
+  void _drawStorySections(Canvas canvas, Rect area) {
     if (totalFragments <= 0) {
       return;
     }
 
-    final count = totalFragments;
-    final spacing = max(2.0, area.width * 0.035);
-    final columns = count <= 5 ? count : 5;
-    final rows = (count / columns).ceil();
-    final markerWidth = (area.width - (spacing * (columns - 1))) / columns;
-    final markerHeight = min(
-      max(4.0, markerWidth * 0.42),
-      (area.height - (spacing * (rows - 1))) / rows,
+    final photoWidth = area.width * 0.38;
+    final photo = Rect.fromLTWH(
+      area.left,
+      area.top + area.height * 0.18,
+      photoWidth,
+      area.height * 0.48,
     );
-    final totalHeight = (markerHeight * rows) + (spacing * (rows - 1));
-    final top = area.top + ((area.height - totalHeight) / 2);
+    final contentLeft = photo.right + max(5.0, area.width * 0.08);
+    final contentWidth = area.right - contentLeft;
 
-    for (var i = 0; i < count; i++) {
-      final row = i ~/ columns;
-      final column = i % columns;
-      final rect = Rect.fromLTWH(
-        area.left + (column * (markerWidth + spacing)),
-        top + (row * (markerHeight + spacing)),
-        markerWidth,
-        markerHeight,
-      );
-      final isRevealed = i < revealedFragments;
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(rect, Radius.circular(markerHeight * 0.4)),
-        Paint()
-          ..color = isRevealed
-              ? level.accent.withValues(alpha: 0.88)
-              : AppTheme.midnight.withValues(alpha: 0.12),
-      );
+    final sections = <_PaperSection>[
+      _PaperSection(
+        rect: Rect.fromLTWH(
+          area.left,
+          area.top,
+          area.width * 0.58,
+          area.height * 0.08,
+        ),
+        color: level.accent,
+        type: _PaperSectionType.rule,
+      ),
+      _PaperSection(
+        rect: Rect.fromLTWH(
+          area.left,
+          area.top + area.height * 0.11,
+          area.width,
+          area.height * 0.12,
+        ),
+        color: AppTheme.midnight,
+        type: _PaperSectionType.headline,
+      ),
+      _PaperSection(
+        rect: photo,
+        color: level.accent,
+        type: _PaperSectionType.photo,
+      ),
+      _PaperSection(
+        rect: Rect.fromLTWH(
+          contentLeft,
+          photo.top,
+          contentWidth,
+          area.height * 0.09,
+        ),
+        color: AppTheme.pressRed,
+        type: _PaperSectionType.rule,
+      ),
+      _PaperSection(
+        rect: Rect.fromLTWH(
+          contentLeft,
+          photo.top + area.height * 0.14,
+          contentWidth * 0.82,
+          area.height * 0.08,
+        ),
+        color: AppTheme.pressBlue,
+        type: _PaperSectionType.rule,
+      ),
+      _PaperSection(
+        rect: Rect.fromLTWH(
+          contentLeft,
+          photo.top + area.height * 0.28,
+          contentWidth,
+          area.height * 0.08,
+        ),
+        color: AppTheme.pressGold,
+        type: _PaperSectionType.rule,
+      ),
+      _PaperSection(
+        rect: Rect.fromLTWH(
+          area.left,
+          photo.bottom + area.height * 0.08,
+          area.width * 0.46,
+          area.height * 0.13,
+        ),
+        color: AppTheme.pressGreen,
+        type: _PaperSectionType.column,
+      ),
+      _PaperSection(
+        rect: Rect.fromLTWH(
+          area.left + area.width * 0.52,
+          photo.bottom + area.height * 0.08,
+          area.width * 0.48,
+          area.height * 0.13,
+        ),
+        color: level.accent,
+        type: _PaperSectionType.column,
+      ),
+      _PaperSection(
+        rect: Rect.fromLTWH(
+          area.left,
+          area.bottom - area.height * 0.09,
+          area.width * 0.68,
+          area.height * 0.07,
+        ),
+        color: AppTheme.pressRed,
+        type: _PaperSectionType.rule,
+      ),
+      _PaperSection(
+        rect: Rect.fromLTWH(
+          area.right - area.height * 0.16,
+          area.bottom - area.height * 0.16,
+          area.height * 0.16,
+          area.height * 0.16,
+        ),
+        color: AppTheme.pressGold,
+        type: _PaperSectionType.seal,
+      ),
+    ];
+
+    final completedSections = completion * sections.length;
+    for (var i = 0; i < sections.length; i++) {
+      final section = sections[i];
+      final reveal = (completedSections - i).clamp(0.0, 1.0);
+      _drawSectionPlaceholder(canvas, section);
+      if (reveal > 0) {
+        _drawCompletedSection(canvas, section, reveal);
+      }
     }
+  }
+
+  void _drawSectionPlaceholder(Canvas canvas, _PaperSection section) {
+    switch (section.type) {
+      case _PaperSectionType.seal:
+        canvas.drawCircle(
+          section.rect.center,
+          section.rect.shortestSide / 2,
+          Paint()..color = AppTheme.midnight.withValues(alpha: 0.08),
+        );
+      case _PaperSectionType.column:
+        final linePaint = Paint()
+          ..color = AppTheme.midnight.withValues(alpha: 0.12)
+          ..strokeCap = StrokeCap.round
+          ..strokeWidth = max(1.4, section.rect.height * 0.18);
+        for (var i = 0; i < 3; i++) {
+          final y = section.rect.top + (i * section.rect.height * 0.36);
+          final widthFactor = i == 2 ? 0.72 : 1.0;
+          canvas.drawLine(
+            Offset(section.rect.left, y),
+            Offset(section.rect.left + (section.rect.width * widthFactor), y),
+            linePaint,
+          );
+        }
+      case _PaperSectionType.photo:
+      case _PaperSectionType.headline:
+      case _PaperSectionType.rule:
+        final radius = Radius.circular(max(2.5, section.rect.height * 0.35));
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(section.rect, radius),
+          Paint()..color = AppTheme.midnight.withValues(alpha: 0.08),
+        );
+    }
+  }
+
+  void _drawCompletedSection(
+    Canvas canvas,
+    _PaperSection section,
+    double reveal,
+  ) {
+    final rect = section.rect;
+    final clippedRect = Rect.fromLTRB(
+      rect.left,
+      rect.top,
+      rect.left + (rect.width * reveal),
+      rect.bottom,
+    );
+
+    canvas.save();
+    canvas.clipRect(clippedRect);
+
+    switch (section.type) {
+      case _PaperSectionType.seal:
+        final radius = (rect.shortestSide / 2) * (0.82 + (0.18 * reveal));
+        canvas.drawCircle(
+          rect.center,
+          radius,
+          Paint()..color = section.color.withValues(alpha: 0.9),
+        );
+        final checkPaint = Paint()
+          ..color = AppTheme.card.withValues(alpha: 0.96)
+          ..style = PaintingStyle.stroke
+          ..strokeCap = StrokeCap.round
+          ..strokeJoin = StrokeJoin.round
+          ..strokeWidth = max(1.4, rect.shortestSide * 0.14);
+        final check = Path()
+          ..moveTo(rect.left + rect.width * 0.28, rect.top + rect.height * 0.52)
+          ..lineTo(rect.left + rect.width * 0.44, rect.top + rect.height * 0.68)
+          ..lineTo(
+            rect.left + rect.width * 0.74,
+            rect.top + rect.height * 0.34,
+          );
+        canvas.drawPath(check, checkPaint);
+      case _PaperSectionType.column:
+        final linePaint = Paint()
+          ..color = section.color.withValues(alpha: 0.7 + (0.18 * reveal))
+          ..strokeCap = StrokeCap.round
+          ..strokeWidth = max(1.6, rect.height * 0.2);
+        for (var i = 0; i < 3; i++) {
+          final y = rect.top + (i * rect.height * 0.36);
+          final widthFactor = i == 2 ? 0.76 : 1.0;
+          canvas.drawLine(
+            Offset(rect.left, y),
+            Offset(rect.left + (rect.width * widthFactor), y),
+            linePaint,
+          );
+        }
+      case _PaperSectionType.photo:
+        final radius = Radius.circular(max(4.0, rect.width * 0.12));
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(rect, radius),
+          Paint()
+            ..color = section.color.withValues(alpha: 0.28 + (0.42 * reveal)),
+        );
+        final sparklePaint = Paint()
+          ..color = AppTheme.card.withValues(alpha: 0.74)
+          ..strokeCap = StrokeCap.round
+          ..strokeWidth = max(1.0, rect.shortestSide * 0.06);
+        canvas.drawLine(
+          Offset(rect.left + rect.width * 0.24, rect.top + rect.height * 0.68),
+          Offset(rect.left + rect.width * 0.46, rect.top + rect.height * 0.42),
+          sparklePaint,
+        );
+        canvas.drawLine(
+          Offset(rect.left + rect.width * 0.46, rect.top + rect.height * 0.42),
+          Offset(rect.left + rect.width * 0.72, rect.top + rect.height * 0.62),
+          sparklePaint,
+        );
+      case _PaperSectionType.headline:
+        final radius = Radius.circular(max(3.0, rect.height * 0.28));
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(rect, radius),
+          Paint()..color = section.color.withValues(alpha: 0.82),
+        );
+        final highlight = Rect.fromLTWH(
+          rect.left,
+          rect.top + rect.height * 0.66,
+          rect.width,
+          max(1.0, rect.height * 0.16),
+        );
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(highlight, Radius.circular(highlight.height)),
+          Paint()..color = AppTheme.pressGold.withValues(alpha: 0.72),
+        );
+      case _PaperSectionType.rule:
+        final radius = Radius.circular(max(2.5, rect.height * 0.38));
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(rect, radius),
+          Paint()..color = section.color.withValues(alpha: 0.78),
+        );
+    }
+
+    canvas.restore();
   }
 
   @override
   bool shouldRepaint(covariant _ScenePreviewPainter oldDelegate) {
     return oldDelegate.level != level ||
-        oldDelegate.revealedFragments != revealedFragments ||
+        oldDelegate.completion != completion ||
         oldDelegate.totalFragments != totalFragments;
   }
+}
+
+enum _PaperSectionType { rule, headline, photo, column, seal }
+
+class _PaperSection {
+  const _PaperSection({
+    required this.rect,
+    required this.color,
+    required this.type,
+  });
+
+  final Rect rect;
+  final Color color;
+  final _PaperSectionType type;
 }
 
 class _GridBoard extends StatelessWidget {
@@ -1410,8 +2095,12 @@ class _GameLayoutMetrics {
     required this.topPadding,
     required this.bottomPadding,
     required this.sectionGap,
-    required this.showcaseHeight,
-    required this.boardTopInset,
+    required this.contentGap,
+    required this.bannerGap,
+    required this.statusHeight,
+    required this.minSceneHeight,
+    required this.minBoardSize,
+    required this.boardHeightFactor,
     required this.compact,
     required this.prioritizeBoard,
   });
@@ -1424,26 +2113,11 @@ class _GameLayoutMetrics {
     final veryCompact =
         constraints.maxHeight < 620 || constraints.maxWidth < 340;
     final prioritizeBoard = gridSize >= 8 || constraints.maxHeight < 640;
-    final showcaseHeight = min(
-      prioritizeBoard
-          ? compact
-                ? 134.0
-                : 144.0
-          : compact
-          ? 146.0
-          : 162.0,
-      max(
-        prioritizeBoard ? 118.0 : 124.0,
-        constraints.maxHeight *
-            (prioritizeBoard
-                ? veryCompact
-                      ? 0.2
-                      : 0.22
-                : veryCompact
-                ? 0.21
-                : 0.24),
-      ),
-    );
+    final boardHeightFactor = switch (gridSize) {
+      >= 8 => veryCompact ? 0.56 : 0.58,
+      >= 6 => veryCompact ? 0.52 : 0.54,
+      _ => veryCompact ? 0.44 : 0.48,
+    };
 
     return _GameLayoutMetrics(
       horizontalPadding: veryCompact
@@ -1460,12 +2134,28 @@ class _GameLayoutMetrics {
           : compact
           ? 12.0
           : 16.0,
-      showcaseHeight: showcaseHeight,
-      boardTopInset: prioritizeBoard
-          ? 8.0
+      contentGap: veryCompact ? 7.0 : 8.0,
+      bannerGap: veryCompact ? 6.0 : 8.0,
+      statusHeight: prioritizeBoard
+          ? veryCompact
+                ? 78.0
+                : 86.0
           : compact
-          ? 10.0
-          : 14.0,
+          ? 92.0
+          : 104.0,
+      minSceneHeight: prioritizeBoard
+          ? veryCompact
+                ? 92.0
+                : 112.0
+          : compact
+          ? 124.0
+          : 150.0,
+      minBoardSize: gridSize >= 8
+          ? 270.0
+          : gridSize >= 6
+          ? 248.0
+          : 188.0,
+      boardHeightFactor: boardHeightFactor,
       compact: compact,
       prioritizeBoard: prioritizeBoard,
     );
@@ -1475,8 +2165,12 @@ class _GameLayoutMetrics {
   final double topPadding;
   final double bottomPadding;
   final double sectionGap;
-  final double showcaseHeight;
-  final double boardTopInset;
+  final double contentGap;
+  final double bannerGap;
+  final double statusHeight;
+  final double minSceneHeight;
+  final double minBoardSize;
+  final double boardHeightFactor;
   final bool compact;
   final bool prioritizeBoard;
 }

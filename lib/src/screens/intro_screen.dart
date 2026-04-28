@@ -1,12 +1,42 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:jogopalavras/src/game/intro_preferences.dart';
 import 'package:jogopalavras/src/navigation/app_page_route.dart';
 import 'package:jogopalavras/src/screens/level_screen.dart';
 import 'package:jogopalavras/src/theme/app_theme.dart';
 import 'package:jogopalavras/src/widgets/app_backdrop.dart';
 import 'package:jogopalavras/src/widgets/reveal_on_mount.dart';
 
-class IntroScreen extends StatelessWidget {
+class IntroScreen extends StatefulWidget {
   const IntroScreen({super.key});
+
+  @override
+  State<IntroScreen> createState() => _IntroScreenState();
+}
+
+class _IntroScreenState extends State<IntroScreen>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _typewriterController;
+
+  static const String _typedLine =
+      'Arraste pelas letras, forme palavras e feche a manchete.';
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(IntroPreferences.markIntroSeen());
+    _typewriterController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2200),
+    )..forward();
+  }
+
+  @override
+  void dispose() {
+    _typewriterController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -20,19 +50,18 @@ class IntroScreen extends StatelessWidget {
           child: LayoutBuilder(
             builder: (context, constraints) {
               return SingleChildScrollView(
-                padding: const EdgeInsets.all(24),
+                padding: const EdgeInsets.fromLTRB(22, 18, 22, 22),
                 child: ConstrainedBox(
                   constraints: BoxConstraints(minHeight: constraints.maxHeight),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const SizedBox(height: 8),
                       RevealOnMount(
                         child: Container(
-                          padding: const EdgeInsets.all(24),
+                          padding: const EdgeInsets.all(20),
                           decoration: BoxDecoration(
                             color: AppTheme.card.withValues(alpha: 0.96),
-                            borderRadius: BorderRadius.circular(12),
+                            borderRadius: BorderRadius.circular(8),
                             border: Border.all(color: AppTheme.midnight),
                             boxShadow: [
                               BoxShadow(
@@ -65,7 +94,7 @@ class IntroScreen extends StatelessWidget {
                                   const SizedBox(width: 10),
                                   Expanded(
                                     child: Text(
-                                      'EDIÇÃO DE PALAVRAS',
+                                      'EXTRA • PRIMEIRA EDIÇÃO',
                                       style: theme.textTheme.labelLarge
                                           ?.copyWith(
                                             color: AppTheme.pressRed,
@@ -87,16 +116,21 @@ class IntroScreen extends StatelessWidget {
                               const SizedBox(height: 18),
                               Text(
                                 'Anagrama\nOculto',
-                                style: theme.textTheme.displaySmall?.copyWith(
+                                style: theme.textTheme.displayMedium?.copyWith(
                                   color: AppTheme.midnight,
                                   height: 0.95,
                                   fontWeight: FontWeight.w900,
                                   letterSpacing: 0,
                                 ),
                               ),
-                              const SizedBox(height: 14),
+                              const SizedBox(height: 12),
                               Container(
-                                padding: const EdgeInsets.only(left: 12),
+                                padding: const EdgeInsets.fromLTRB(
+                                  12,
+                                  9,
+                                  12,
+                                  9,
+                                ),
                                 decoration: const BoxDecoration(
                                   border: Border(
                                     left: BorderSide(
@@ -105,27 +139,65 @@ class IntroScreen extends StatelessWidget {
                                     ),
                                   ),
                                 ),
-                                child: Text(
-                                  'Passe o dedo pelas letras e descubra palavras em português em uma edição feita para leitura rápida.',
-                                  style: theme.textTheme.titleMedium?.copyWith(
-                                    color: AppTheme.ink.withValues(alpha: 0.86),
-                                    height: 1.36,
-                                    fontWeight: FontWeight.w600,
-                                  ),
+                                child: AnimatedBuilder(
+                                  animation: _typewriterController,
+                                  builder: (context, child) {
+                                    final visibleCharacters =
+                                        (_typedLine.length *
+                                                _typewriterController.value)
+                                            .round()
+                                            .clamp(0, _typedLine.length)
+                                            .toInt();
+                                    final showCursor =
+                                        (_typewriterController.value < 1) ||
+                                        (DateTime.now().millisecond ~/ 420)
+                                            .isEven;
+
+                                    return Text(
+                                      '${_typedLine.substring(0, visibleCharacters)}${showCursor ? '|' : ''}',
+                                      style: theme.textTheme.titleMedium
+                                          ?.copyWith(
+                                            color: AppTheme.ink.withValues(
+                                              alpha: 0.86,
+                                            ),
+                                            height: 1.32,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                    );
+                                  },
                                 ),
+                              ),
+                              const SizedBox(height: 16),
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 8,
+                                children: const [
+                                  _PressChip(
+                                    icon: Icons.touch_app_rounded,
+                                    label: 'arraste',
+                                  ),
+                                  _PressChip(
+                                    icon: Icons.spellcheck_rounded,
+                                    label: 'forme',
+                                  ),
+                                  _PressChip(
+                                    icon: Icons.emoji_events_rounded,
+                                    label: 'pontue',
+                                  ),
+                                ],
                               ),
                             ],
                           ),
                         ),
                       ),
-                      const SizedBox(height: 22),
+                      const SizedBox(height: 16),
                       RevealOnMount(
                         delay: const Duration(milliseconds: 140),
                         child: Container(
-                          padding: const EdgeInsets.all(22),
+                          padding: const EdgeInsets.all(18),
                           decoration: BoxDecoration(
                             color: AppTheme.card.withValues(alpha: 0.94),
-                            borderRadius: BorderRadius.circular(12),
+                            borderRadius: BorderRadius.circular(8),
                             border: Border.all(
                               color: AppTheme.rule.withValues(alpha: 0.9),
                             ),
@@ -134,52 +206,39 @@ class IntroScreen extends StatelessWidget {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                'Como funciona',
+                                'Como jogar',
                                 style: theme.textTheme.titleLarge?.copyWith(
                                   fontWeight: FontWeight.w900,
                                 ),
                               ),
-                              const SizedBox(height: 16),
+                              const SizedBox(height: 12),
                               const _StepTile(
                                 number: '1',
-                                text: 'Escolha um nível.',
+                                text: 'Escolha a editoria.',
                                 accent: AppTheme.pressBlue,
                               ),
-                              const SizedBox(height: 12),
+                              const SizedBox(height: 10),
                               const _StepTile(
                                 number: '2',
-                                text:
-                                    'Arraste o dedo pelas letras do tabuleiro.',
+                                text: 'Ligue letras vizinhas.',
                                 accent: AppTheme.pressRed,
                               ),
-                              const SizedBox(height: 12),
+                              const SizedBox(height: 10),
                               const _StepTile(
                                 number: '3',
-                                text:
-                                    'Encontre 10 palavras para vencer a rodada.',
+                                text: 'Ache palavras e suba no ranking.',
                                 accent: AppTheme.pressGold,
                               ),
                             ],
                           ),
                         ),
                       ),
-                      const SizedBox(height: 18),
-                      RevealOnMount(
-                        delay: const Duration(milliseconds: 200),
-                        child: const _TransparencyNotice(),
-                      ),
-                      const SizedBox(height: 28),
+                      const SizedBox(height: 20),
                       RevealOnMount(
                         delay: const Duration(milliseconds: 240),
                         beginOffset: const Offset(0, 0.06),
                         child: _PlayButton(
-                          onPressed: () {
-                            Navigator.of(context).push(
-                              appPageRoute<void>(
-                                builder: (_) => const LevelScreen(),
-                              ),
-                            );
-                          },
+                          onPressed: () => _openLevelScreen(context),
                         ),
                       ),
                       const SizedBox(height: 12),
@@ -193,133 +252,53 @@ class IntroScreen extends StatelessWidget {
       ),
     );
   }
+
+  Future<void> _openLevelScreen(BuildContext context) async {
+    try {
+      await IntroPreferences.markIntroSeen();
+    } finally {
+      if (context.mounted) {
+        Navigator.of(context).pushReplacement(
+          appPageRoute<void>(
+            settings: const RouteSettings(name: '/levels'),
+            builder: (_) => const LevelScreen(),
+          ),
+        );
+      }
+    }
+  }
 }
 
-class _TransparencyNotice extends StatelessWidget {
-  const _TransparencyNotice();
+class _PressChip extends StatelessWidget {
+  const _PressChip({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
-        color: AppTheme.card.withValues(alpha: 0.92),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppTheme.rule.withValues(alpha: 0.78)),
+        color: AppTheme.midnight.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(7),
+        border: Border.all(color: AppTheme.rule.withValues(alpha: 0.8)),
       ),
-      child: Column(
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          const _InfoLine(
-            icon: Icons.psychology_alt_rounded,
-            title: 'Jogo rapido e inteligente',
-            text:
-                'Rodadas curtas para treinar vocabulario, atencao e raciocinio sem pressa.',
-            accent: AppTheme.pressBlue,
-          ),
-          const SizedBox(height: 14),
-          const _InfoLine(
-            icon: Icons.campaign_rounded,
-            title: 'Anuncios poucos e claros',
-            text:
-                'Quando ativados, ajudam a manter o app gratuito e aparecem apenas em espacos discretos ou pausas naturais.',
-            accent: AppTheme.pressRed,
-          ),
-          const SizedBox(height: 10),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: TextButton.icon(
-              onPressed: () => _showAdsInfo(context),
-              icon: const Icon(Icons.info_outline_rounded, size: 18),
-              label: const Text('Entender anuncios'),
+          Icon(icon, size: 16, color: AppTheme.pressRed),
+          const SizedBox(width: 6),
+          Text(
+            label.toUpperCase(),
+            style: const TextStyle(
+              color: AppTheme.midnight,
+              fontSize: 12,
+              fontWeight: FontWeight.w900,
             ),
           ),
         ],
       ),
-    );
-  }
-
-  void _showAdsInfo(BuildContext context) {
-    showDialog<void>(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          backgroundColor: AppTheme.card,
-          shape: RoundedRectangleBorder(
-            side: const BorderSide(color: AppTheme.rule),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          title: const Text('Anuncios no Anagrama Oculto'),
-          content: const Text(
-            'O jogo foi planejado para mostrar poucos anuncios. Banners ficam em areas reservadas e interstitials so podem aparecer depois de pausas naturais, nunca no meio da jogada. A receita ajuda a manter o app gratuito e financiar melhorias.',
-            style: TextStyle(height: 1.35, fontWeight: FontWeight.w600),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Entendi'),
-            ),
-          ],
-        );
-      },
-    );
-  }
-}
-
-class _InfoLine extends StatelessWidget {
-  const _InfoLine({
-    required this.icon,
-    required this.title,
-    required this.text,
-    required this.accent,
-  });
-
-  final IconData icon;
-  final String title;
-  final String text;
-  final Color accent;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Container(
-          width: 38,
-          height: 38,
-          decoration: BoxDecoration(
-            color: accent.withValues(alpha: 0.12),
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: accent.withValues(alpha: 0.2)),
-          ),
-          child: Icon(icon, color: accent, size: 20),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                title,
-                style: theme.textTheme.titleSmall?.copyWith(
-                  color: AppTheme.midnight,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-              const SizedBox(height: 3),
-              Text(
-                text,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: AppTheme.ink.withValues(alpha: 0.76),
-                  height: 1.32,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
     );
   }
 }
@@ -338,10 +317,10 @@ class _StepTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
       decoration: BoxDecoration(
         color: AppTheme.card.withValues(alpha: 0.7),
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(8),
         border: Border.all(color: AppTheme.rule.withValues(alpha: 0.74)),
       ),
       child: Row(
@@ -366,7 +345,7 @@ class _StepTile extends StatelessWidget {
           Expanded(
             child: Text(
               text,
-              style: const TextStyle(height: 1.35, fontWeight: FontWeight.w600),
+              style: const TextStyle(height: 1.25, fontWeight: FontWeight.w700),
             ),
           ),
         ],

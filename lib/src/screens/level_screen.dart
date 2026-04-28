@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:jogopalavras/src/game/game_level.dart';
 import 'package:jogopalavras/src/navigation/app_page_route.dart';
 import 'package:jogopalavras/src/screens/game_screen.dart';
+import 'package:jogopalavras/src/screens/ranking_screen.dart';
 import 'package:jogopalavras/src/theme/app_theme.dart';
 import 'package:jogopalavras/src/widgets/ad_banner_slot.dart';
 import 'package:jogopalavras/src/widgets/app_backdrop.dart';
@@ -16,19 +17,23 @@ class LevelScreen extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(),
+      bottomNavigationBar: const AdBannerSlot(
+        compact: true,
+        safeAreaMinimum: EdgeInsets.fromLTRB(18, 0, 18, 10),
+      ),
       body: AppBackdrop(
         primary: AppTheme.pressBlue,
         secondary: AppTheme.pressRed,
         child: SafeArea(
           child: ListView(
-            padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
+            padding: const EdgeInsets.fromLTRB(18, 4, 18, 18),
             children: [
               RevealOnMount(
                 child: Container(
-                  padding: const EdgeInsets.all(20),
+                  padding: const EdgeInsets.fromLTRB(18, 16, 18, 14),
                   decoration: BoxDecoration(
                     color: AppTheme.midnight,
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(10),
                     border: Border.all(color: AppTheme.midnight),
                     boxShadow: [
                       BoxShadow(
@@ -47,36 +52,58 @@ class LevelScreen extends StatelessWidget {
                           color: Colors.white,
                           fontWeight: FontWeight.w900,
                           letterSpacing: 0,
+                          fontSize: 24,
                         ),
                       ),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 4),
                       Text(
                         'Cada nível muda o tamanho das palavras e a densidade do tabuleiro.',
-                        style: theme.textTheme.bodyLarge?.copyWith(
+                        style: theme.textTheme.bodyMedium?.copyWith(
                           color: Colors.white.withValues(alpha: 0.86),
-                          height: 1.3,
+                          height: 1.18,
                           fontWeight: FontWeight.w500,
                         ),
                       ),
-                      const SizedBox(height: 14),
+                      const SizedBox(height: 10),
                       const _HeroSummary(
                         icon: Icons.subject_rounded,
                         label:
                             'Palavras de 4 a 9 letras • da nota curta ao caderno especial',
                       ),
+                      const SizedBox(height: 2),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: TextButton.icon(
+                          style: TextButton.styleFrom(
+                            foregroundColor: Colors.white,
+                            minimumSize: const Size(0, 34),
+                            padding: const EdgeInsets.symmetric(horizontal: 4),
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                          onPressed: () {
+                            Navigator.of(context).push(
+                              appPageRoute<void>(
+                                settings: const RouteSettings(name: '/ranking'),
+                                builder: (_) => const RankingScreen(),
+                              ),
+                            );
+                          },
+                          icon: const Icon(Icons.leaderboard_rounded, size: 18),
+                          label: const Text('Ver ranking'),
+                        ),
+                      ),
                     ],
                   ),
                 ),
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: 14),
               for (var index = 0; index < GameLevel.values.length; index++) ...[
                 RevealOnMount(
                   delay: Duration(milliseconds: 100 + (index * 70)),
                   child: _LevelCard(level: GameLevel.values[index]),
                 ),
-                const SizedBox(height: 18),
+                const SizedBox(height: 10),
               ],
-              const AdBannerSlot(),
             ],
           ),
         ),
@@ -92,108 +119,143 @@ class _LevelCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(22),
-      decoration: BoxDecoration(
-        color: AppTheme.card.withValues(alpha: 0.96),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppTheme.rule.withValues(alpha: 0.9)),
-        boxShadow: [
-          BoxShadow(
-            color: AppTheme.midnight.withValues(alpha: 0.08),
-            blurRadius: 14,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 56,
-                height: 56,
-                decoration: BoxDecoration(
-                  color: level.accent,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Icon(level.icon, color: Colors.white),
+    final theme = Theme.of(context);
+
+    return Material(
+      color: AppTheme.card.withValues(alpha: 0.96),
+      borderRadius: BorderRadius.circular(10),
+      child: Ink(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: AppTheme.rule.withValues(alpha: 0.9)),
+          boxShadow: [
+            BoxShadow(
+              color: AppTheme.midnight.withValues(alpha: 0.07),
+              blurRadius: 10,
+              offset: const Offset(0, 5),
+            ),
+          ],
+        ),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(10),
+          onTap: () {
+            Navigator.of(context).push(
+              appPageRoute<void>(
+                settings: RouteSettings(name: '/game/${level.name}'),
+                builder: (_) => GameScreen(level: level),
               ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      level.title,
-                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: 0,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      level.subtitle,
-                      style: TextStyle(
-                        height: 1.35,
-                        color: AppTheme.ink.withValues(alpha: 0.8),
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
+            );
+          },
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Container(
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    color: level.accent,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(level.icon, color: Colors.white, size: 22),
                 ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 8,
-                ),
-                decoration: BoxDecoration(
-                  color: level.accent.withValues(alpha: 0.14),
-                  borderRadius: BorderRadius.circular(7),
-                  border: Border.all(
-                    color: level.accent.withValues(alpha: 0.22),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              level.title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: 0,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            level.wordSizeShortLabel,
+                            style: TextStyle(
+                              color: level.accent,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w900,
+                              height: 1,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        level.subtitle,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: AppTheme.ink.withValues(alpha: 0.78),
+                          fontSize: 13,
+                          height: 1.1,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              _goalLabel(level),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: AppTheme.ink.withValues(alpha: 0.72),
+                                fontSize: 12,
+                                height: 1,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                          Text(
+                            ' • ',
+                            style: TextStyle(
+                              color: AppTheme.ink.withValues(alpha: 0.52),
+                              fontSize: 12,
+                              height: 1,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          Flexible(
+                            child: Text(
+                              _ctaLabel(level),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: AppTheme.ink.withValues(alpha: 0.9),
+                                fontSize: 12,
+                                height: 1,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                   ),
                 ),
-                child: Text(
-                  level.wordSizeShortLabel,
-                  style: const TextStyle(fontWeight: FontWeight.w800),
+                const SizedBox(width: 10),
+                Icon(
+                  Icons.arrow_forward_rounded,
+                  color: AppTheme.midnight.withValues(alpha: 0.72),
+                  size: 22,
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
-          const SizedBox(height: 18),
-          Row(
-            children: [
-              Expanded(
-                child: _LevelNote(
-                  icon: Icons.text_fields_rounded,
-                  text: level.wordSizeLabel,
-                  accent: level.accent,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _LevelNote(
-                  icon: Icons.emoji_events_rounded,
-                  text: _goalLabel(level),
-                  accent: level.accent,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 18),
-          _LevelPlayButton(
-            label: _ctaLabel(level),
-            accent: level.accent,
-            onPressed: () {
-              Navigator.of(context).push(
-                appPageRoute<void>(builder: (_) => GameScreen(level: level)),
-              );
-            },
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -220,7 +282,7 @@ class _HeroSummary extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(8),
@@ -236,115 +298,12 @@ class _HeroSummary extends StatelessWidget {
               style: const TextStyle(
                 color: Colors.white,
                 fontWeight: FontWeight.w700,
-                height: 1.2,
+                fontSize: 13,
+                height: 1.12,
               ),
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _LevelNote extends StatelessWidget {
-  const _LevelNote({
-    required this.icon,
-    required this.text,
-    required this.accent,
-  });
-
-  final IconData icon;
-  final String text;
-  final Color accent;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      decoration: BoxDecoration(
-        color: accent.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: accent.withValues(alpha: 0.18)),
-      ),
-      child: Row(
-        children: [
-          Icon(icon, color: AppTheme.midnight, size: 18),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              text,
-              style: const TextStyle(fontWeight: FontWeight.w700, height: 1.2),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _LevelPlayButton extends StatelessWidget {
-  const _LevelPlayButton({
-    required this.label,
-    required this.accent,
-    required this.onPressed,
-  });
-
-  final String label;
-  final Color accent;
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: Ink(
-        decoration: BoxDecoration(
-          color: AppTheme.midnight,
-          borderRadius: BorderRadius.circular(10),
-          boxShadow: [
-            BoxShadow(
-              color: AppTheme.midnight.withValues(alpha: 0.16),
-              blurRadius: 16,
-              offset: const Offset(0, 9),
-            ),
-          ],
-        ),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(10),
-          onTap: onPressed,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
-            child: Row(
-              children: [
-                Container(
-                  width: 38,
-                  height: 38,
-                  decoration: BoxDecoration(
-                    color: accent,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: const Icon(
-                    Icons.play_arrow_rounded,
-                    color: Colors.white,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    label,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w900,
-                      fontSize: 16,
-                    ),
-                  ),
-                ),
-                const Icon(Icons.arrow_forward_rounded, color: Colors.white),
-              ],
-            ),
-          ),
-        ),
       ),
     );
   }

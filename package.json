@@ -14,7 +14,13 @@
     "analyze": "C:\\Flutter\\flutter\\bin\\flutter.bat analyze --no-pub",
     "test:flutter": "C:\\Flutter\\flutter\\bin\\flutter.bat test --no-pub",
     "build:apk": "C:\\Flutter\\flutter\\bin\\flutter.bat build apk --release",
+    "build:apk:ranking": "C:\\Flutter\\flutter\\bin\\flutter.bat build apk --release --dart-define=RANKING_API_URL=%RANKING_API_URL%",
+    "build:apk:ranking:prod": "C:\\Flutter\\flutter\\bin\\flutter.bat build apk --release --dart-define=RANKING_API_URL=https://anagrama-oculto-ranking.maycowcarrara.workers.dev",
     "build:aab": "C:\\Flutter\\flutter\\bin\\flutter.bat build appbundle --release",
-    "build:aab:ads": "C:\\Flutter\\flutter\\bin\\flutter.bat build appbundle --release --dart-define=ADS_ENABLED=true --dart-define=ADMOB_ANDROID_BANNER_ID=%ADMOB_ANDROID_BANNER_ID% --dart-define=ADMOB_ANDROID_INTERSTITIAL_ID=%ADMOB_ANDROID_INTERSTITIAL_ID%"
+    "build:aab:ranking": "C:\\Flutter\\flutter\\bin\\flutter.bat build appbundle --release --dart-define=RANKING_API_URL=%RANKING_API_URL%",
+    "build:aab:ranking:prod": "C:\\Flutter\\flutter\\bin\\flutter.bat build appbundle --release --dart-define=RANKING_API_URL=https://anagrama-oculto-ranking.maycowcarrara.workers.dev",
+    "build:aab:ads": "C:\\Flutter\\flutter\\bin\\flutter.bat build appbundle --release --dart-define=ADS_ENABLED=true --dart-define=ADMOB_ANDROID_BANNER_ID=%ADMOB_ANDROID_BANNER_ID% --dart-define=ADMOB_ANDROID_INTERSTITIAL_ID=%ADMOB_ANDROID_INTERSTITIAL_ID%",
+    "admin:logs": "powershell -ExecutionPolicy Bypass -File scripts/admin-logs.ps1",
+    "admin:logs:simulate": "powershell -ExecutionPolicy Bypass -File scripts/simulate-error-log.ps1"
   }
 }

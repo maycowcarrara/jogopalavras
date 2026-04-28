@@ -1,5 +1,5 @@
 name: jogopalavras
-description: "Jogo de anagramas com palavras em pt-BR, visual moderno e base pronta para evolucao mobile."
+description: "Jogo de anagramas com palavras em pt-BR, visual moderno e base pronta para evolução mobile."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
@@ -36,6 +36,8 @@ dependencies:
   cupertino_icons: ^1.0.8
   google_mobile_ads: ^7.0.0
   audioplayers: ^6.5.0
+  shared_preferences: ^2.5.3
+  http: ^1.5.0
 
 dev_dependencies:
   flutter_test:

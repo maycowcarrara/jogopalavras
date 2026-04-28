@@ -1,0 +1,13 @@
+{
+  "name": "anagrama-oculto-ranking-api",
+  "private": true,
+  "version": "1.0.0",
+  "description": "API publica de ranking para o Anagrama Oculto.",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^4.50.0"
+  }
+}
