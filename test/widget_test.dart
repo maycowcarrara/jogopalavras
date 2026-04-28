@@ -27,7 +27,6 @@ void main() {
     await tester.tap(find.text('Começar no fácil'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Coluna leve'), findsOneWidget);
     expect(find.text('0/10 palavras'), findsOneWidget);
   });
 
@@ -45,7 +44,6 @@ void main() {
     await tester.tap(find.text('Jogar no médio'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Caderno principal'), findsOneWidget);
     expect(find.text('0/8 palavras'), findsOneWidget);
   });
 

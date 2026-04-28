@@ -12,7 +12,6 @@ import 'package:jogopalavras/src/game/word_deck.dart';
 import 'package:jogopalavras/src/navigation/app_page_route.dart';
 import 'package:jogopalavras/src/screens/ranking_screen.dart';
 import 'package:jogopalavras/src/theme/app_theme.dart';
-import 'package:jogopalavras/src/widgets/ad_banner_slot.dart';
 import 'package:jogopalavras/src/widgets/app_backdrop.dart';
 import 'package:jogopalavras/src/widgets/reveal_on_mount.dart';
 
@@ -140,7 +139,6 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   static const int _startingScore = RankingStore.startingScore;
   static const int _pointsPerHint = RankingStore.pointsPerHint;
   static const int _pointsPerSkip = RankingStore.pointsPerSkip;
-  static const int _progressFragments = 10;
   static const Duration _hintDelay = Duration(seconds: 10);
   static const Duration _typewriterTick = Duration(milliseconds: 78);
   static const Duration _hitCelebrationHold = Duration(milliseconds: 900);
@@ -674,11 +672,6 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       0.0,
       1.0,
     );
-    final revealedFragments = _discoveredWords.isEmpty
-        ? 0
-        : ((_discoveredWords.length / targetWordCount) * _progressFragments)
-              .ceil()
-              .clamp(0, _progressFragments);
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle.dark.copyWith(
@@ -746,30 +739,8 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                           child: LayoutBuilder(
                             builder: (context, contentConstraints) {
                               final gap = layout.contentGap;
-                              final maxMiddleHeight =
-                                  contentConstraints.maxHeight;
-                              final showHintControl =
-                                  _hintSuggested || _hintRevealed;
-                              final minPanelHeight = layout.minPanelHeight +
-                                  (showHintControl
-                                      ? layout.hintPanelHeightAllowance
-                                      : 0);
-                              final targetBoardSize = min(
-                                contentConstraints.maxWidth,
-                                maxMiddleHeight * layout.boardHeightFactor,
-                              );
-                              final maxBoardWithPanel = max(
-                                layout.minBoardSize,
-                                maxMiddleHeight - gap - minPanelHeight,
-                              );
-                              final boardSize = min(
-                                targetBoardSize,
-                                maxBoardWithPanel,
-                              );
-                              final panelHeight = max(
-                                minPanelHeight,
-                                maxMiddleHeight - boardSize - gap,
-                              );
+                              final panelHeight = layout.minPanelHeight;
+                              final actionHeight = layout.actionPanelHeight;
 
                               return Column(
                                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -779,67 +750,91 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                                     child: SizedBox(
                                       height: panelHeight,
                                       child: _RoundScenePanel(
-                                        level: widget.level,
                                         currentWord: _currentWord,
                                         targetWordLength: _targetWord.length,
+                                        hasError: _hasError,
+                                        isHitCelebrating: _isHitCelebrating,
+                                        typedHitWord: _typedHitWord,
+                                        targetWordCount: targetWordCount,
+                                        discoveredCount:
+                                            _discoveredWords.length,
+                                        compact: layout.compact,
+                                      ),
+                                    ),
+                                  ),
+                                  SizedBox(height: gap),
+                                  Expanded(
+                                    child: LayoutBuilder(
+                                      builder: (context, boardConstraints) {
+                                        final boardSize = min(
+                                          boardConstraints.maxWidth,
+                                          boardConstraints.maxHeight,
+                                        );
+
+                                        return RevealOnMount(
+                                          delay: const Duration(
+                                            milliseconds: 130,
+                                          ),
+                                          child: Center(
+                                            child: SizedBox.square(
+                                              dimension: boardSize,
+                                              child: AnimatedSwitcher(
+                                                duration: const Duration(
+                                                  milliseconds: 180,
+                                                ),
+                                                child: _isPaused
+                                                    ? _PausedBoard(
+                                                        key: const ValueKey<
+                                                          String
+                                                        >('paused'),
+                                                        accent:
+                                                            widget.level.accent,
+                                                        compact: layout.compact,
+                                                        onResume: _togglePause,
+                                                      )
+                                                    : _GridBoard(
+                                                        key: const ValueKey<
+                                                          String
+                                                        >('board'),
+                                                        grid: _grid,
+                                                        selectedIndices:
+                                                            _selectedIndices,
+                                                        hasError: _hasError,
+                                                        dragPosition:
+                                                            _dragPosition,
+                                                        gridSize: widget
+                                                            .level
+                                                            .gridSize,
+                                                        accent:
+                                                            widget.level.accent,
+                                                        compact: layout.compact,
+                                                        onPanStart:
+                                                            _handleDrag,
+                                                        onPanUpdate:
+                                                            _handleDrag,
+                                                        onPanEnd: _onDragEnd,
+                                                      ),
+                                              ),
+                                            ),
+                                          ),
+                                        );
+                                      },
+                                    ),
+                                  ),
+                                  SizedBox(height: gap),
+                                  RevealOnMount(
+                                    delay: const Duration(milliseconds: 170),
+                                    child: SizedBox(
+                                      height: actionHeight,
+                                      child: _RoundActionPanel(
                                         hint: _currentHint,
                                         hintSuggested: _hintSuggested,
                                         hintRevealed: _hintRevealed,
                                         hintPenalty: _pointsPerHint,
                                         skipPenalty: _pointsPerSkip,
-                                        hasError: _hasError,
-                                        isHitCelebrating: _isHitCelebrating,
-                                        typedHitWord: _typedHitWord,
-                                        score: _score,
-                                        targetWordCount: targetWordCount,
-                                        discoveredCount:
-                                            _discoveredWords.length,
                                         compact: layout.compact,
                                         onRevealHint: _revealHint,
                                         onSkipWord: _skipWord,
-                                        revealedFragments: revealedFragments,
-                                        totalFragments: _progressFragments,
-                                      ),
-                                    ),
-                                  ),
-                                  SizedBox(height: gap),
-                                  RevealOnMount(
-                                    delay: const Duration(milliseconds: 130),
-                                    child: Align(
-                                      alignment: Alignment.bottomCenter,
-                                      child: SizedBox.square(
-                                        dimension: boardSize,
-                                        child: AnimatedSwitcher(
-                                          duration: const Duration(
-                                            milliseconds: 180,
-                                          ),
-                                          child: _isPaused
-                                              ? _PausedBoard(
-                                                  key: const ValueKey<String>(
-                                                    'paused',
-                                                  ),
-                                                  accent: widget.level.accent,
-                                                  compact: layout.compact,
-                                                  onResume: _togglePause,
-                                                )
-                                              : _GridBoard(
-                                                  key: const ValueKey<String>(
-                                                    'board',
-                                                  ),
-                                                  grid: _grid,
-                                                  selectedIndices:
-                                                      _selectedIndices,
-                                                  hasError: _hasError,
-                                                  dragPosition: _dragPosition,
-                                                  gridSize:
-                                                      widget.level.gridSize,
-                                                  accent: widget.level.accent,
-                                                  compact: layout.compact,
-                                                  onPanStart: _handleDrag,
-                                                  onPanUpdate: _handleDrag,
-                                                  onPanEnd: _onDragEnd,
-                                                ),
-                                        ),
                                       ),
                                     ),
                                   ),
@@ -848,8 +843,6 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                             },
                           ),
                         ),
-                        SizedBox(height: layout.bannerGap),
-                        AdBannerSlot(compact: layout.compact),
                       ],
                     ),
                   );
@@ -885,22 +878,17 @@ class _GameHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final padding = prioritizeBoard
-        ? 12.0
+        ? 10.0
         : compact
-        ? 12.0
-        : 14.0;
-    final titleSize = prioritizeBoard
-        ? 15.0
-        : compact
-        ? 15.0
-        : 17.0;
+        ? 10.0
+        : 12.0;
     final scoreSize = prioritizeBoard
-        ? 16.0
+        ? 19.0
         : compact
-        ? 17.0
-        : 18.0;
+        ? 20.0
+        : 21.0;
     final iconSize = prioritizeBoard
-        ? 38.0
+        ? 40.0
         : compact
         ? 42.0
         : 44.0;
@@ -926,35 +914,31 @@ class _GameHeader extends StatelessWidget {
             children: [
               const _HeaderBackButton(),
               SizedBox(width: prioritizeBoard ? 8 : 10),
-              Container(
-                width: iconSize,
-                height: iconSize,
-                decoration: BoxDecoration(
-                  color: level.accent,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Icon(level.icon, color: Colors.white),
-              ),
-              const SizedBox(width: 10),
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Text(
-                      level.title,
-                      style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.96),
-                        fontWeight: FontWeight.w900,
-                        fontSize: titleSize,
+                    Container(
+                      width: iconSize,
+                      height: iconSize,
+                      decoration: BoxDecoration(
+                        color: level.accent,
+                        borderRadius: BorderRadius.circular(8),
                       ),
+                      child: Icon(level.icon, color: Colors.white),
                     ),
-                    const SizedBox(height: 2),
-                    Text(
-                      '${level.wordSizeShortLabel} • tabuleiro ${level.tag}',
-                      style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.7),
-                        fontWeight: FontWeight.w700,
-                        fontSize: prioritizeBoard ? 12 : null,
+                    const SizedBox(width: 8),
+                    Flexible(
+                      child: Text(
+                        level.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.96),
+                          fontWeight: FontWeight.w900,
+                          fontSize: compact ? 15 : 17,
+                          letterSpacing: 0,
+                        ),
                       ),
                     ),
                   ],
@@ -1000,46 +984,24 @@ class _GameHeader extends StatelessWidget {
 
 class _RoundScenePanel extends StatelessWidget {
   const _RoundScenePanel({
-    required this.level,
     required this.currentWord,
     required this.targetWordLength,
-    required this.hint,
-    required this.hintSuggested,
-    required this.hintRevealed,
-    required this.hintPenalty,
-    required this.skipPenalty,
     required this.hasError,
     required this.isHitCelebrating,
     required this.typedHitWord,
-    required this.score,
     required this.targetWordCount,
     required this.discoveredCount,
     required this.compact,
-    required this.onRevealHint,
-    required this.onSkipWord,
-    required this.revealedFragments,
-    required this.totalFragments,
   });
 
-  final GameLevel level;
   final String currentWord;
   final int targetWordLength;
-  final String hint;
-  final bool hintSuggested;
-  final bool hintRevealed;
-  final int hintPenalty;
-  final int skipPenalty;
   final bool hasError;
   final bool isHitCelebrating;
   final String typedHitWord;
-  final int score;
   final int targetWordCount;
   final int discoveredCount;
   final bool compact;
-  final VoidCallback onRevealHint;
-  final VoidCallback onSkipWord;
-  final int revealedFragments;
-  final int totalFragments;
 
   @override
   Widget build(BuildContext context) {
@@ -1053,22 +1015,19 @@ class _RoundScenePanel extends StatelessWidget {
     }).join(' ');
     final typingText = isHitCelebrating ? '$currentText ▌' : currentText;
     final progressText = '$discoveredCount/$targetWordCount palavras';
-    final showHintControl = hintSuggested || hintRevealed;
 
     return Stack(
       clipBehavior: Clip.none,
       children: [
         Container(
-          padding: EdgeInsets.all(compact ? 12 : 14),
+          padding: EdgeInsets.all(compact ? 10 : 12),
           decoration: BoxDecoration(
-            color: isHitCelebrating
-                ? AppTheme.card.withValues(alpha: 0.99)
-                : AppTheme.card.withValues(alpha: 0.96),
+            color: AppTheme.midnight,
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
               color: isHitCelebrating
                   ? AppTheme.pressGold.withValues(alpha: 0.72)
-                  : AppTheme.rule.withValues(alpha: 0.9),
+                  : Colors.white.withValues(alpha: 0.08),
             ),
             boxShadow: [
               BoxShadow(
@@ -1080,142 +1039,42 @@ class _RoundScenePanel extends StatelessWidget {
               ),
             ],
           ),
-          child: Row(
-            children: [
-              Expanded(
-                flex: compact ? 14 : 10,
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    final micro = constraints.maxHeight < 128;
-                    final metaFontSize = compact ? 10.0 : 11.0;
-                    return Column(
-                      mainAxisAlignment: micro
-                          ? MainAxisAlignment.center
-                          : MainAxisAlignment.start,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                level.sceneTitle,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  color: AppTheme.midnight,
-                                  fontWeight: FontWeight.w900,
-                                  fontSize: compact ? 13 : 15,
-                                ),
-                              ),
-                            ),
-                          ],
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              return Row(
+                children: [
+                  Expanded(
+                    child: AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 180),
+                      child: Text(
+                        typingText,
+                        key: ValueKey<String>(
+                          '$typingText-$targetWordCount-$isHitCelebrating',
                         ),
-                        SizedBox(height: micro ? 4 : 7),
-                        AnimatedSwitcher(
-                          duration: const Duration(milliseconds: 180),
-                          child: LayoutBuilder(
-                            key: ValueKey<String>(
-                              '$typingText-$score-$targetWordCount-$isHitCelebrating',
-                            ),
-                            builder: (context, constraints) {
-                              final wordText = Text(
-                                typingText,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  color: isHitCelebrating
-                                      ? AppTheme.pressRed
-                                      : hasError
-                                      ? AppTheme.pressRed
-                                      : AppTheme.midnight,
-                                  fontWeight: FontWeight.w900,
-                                  fontSize: compact ? 17 : 19,
-                                  letterSpacing: 0,
-                                ),
-                              );
-                              final scoreChip = _ScoreChip(
-                                progressText: progressText,
-                                compact: compact,
-                              );
-
-                              return Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  wordText,
-                                  SizedBox(height: compact ? 5 : 6),
-                                  scoreChip,
-                                ],
-                              );
-                            },
-                          ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: isHitCelebrating
+                              ? AppTheme.pressGold
+                              : hasError
+                              ? AppTheme.pressRed
+                              : Colors.white,
+                          fontWeight: FontWeight.w900,
+                          fontSize: compact ? 23 : 25,
+                          letterSpacing: 0,
                         ),
-                        if (!micro) ...[
-                          const SizedBox(height: 6),
-                          Wrap(
-                            spacing: 5,
-                            runSpacing: 5,
-                            children: [
-                              _TinyInfoChip(
-                                label: level.wordSizeShortLabel,
-                                fontSize: metaFontSize,
-                              ),
-                              _TinyInfoChip(
-                                label: level.tag,
-                                fontSize: metaFontSize,
-                              ),
-                              _TinyInfoChip(
-                                label: '$discoveredCount acertos',
-                                fontSize: metaFontSize,
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                        ] else
-                          const SizedBox(height: 5),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            if (showHintControl) ...[
-                              _HintPanel(
-                                hint: hint,
-                                suggested: hintSuggested,
-                                revealed: hintRevealed,
-                                hintPenalty: hintPenalty,
-                                compact: true,
-                                dense: true,
-                                onPressed: onRevealHint,
-                              ),
-                              const SizedBox(height: 6),
-                            ] else if (micro) ...[
-                              _TinyInfoChip(
-                                label: '$discoveredCount acertos',
-                                fontSize: metaFontSize,
-                              ),
-                              const SizedBox(height: 6),
-                            ],
-                            _SkipWordButton(
-                              penalty: skipPenalty,
-                              dense: true,
-                              compact: true,
-                              onPressed: onSkipWord,
-                            ),
-                          ],
-                        ),
-                      ],
-                    );
-                  },
-                ),
-              ),
-              SizedBox(width: compact ? 10 : 14),
-              Expanded(
-                flex: compact ? 9 : 12,
-                child: _ScenePreview(
-                  level: level,
-                  revealedFragments: revealedFragments,
-                  totalFragments: totalFragments,
-                ),
-              ),
-            ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  _ScoreChip(
+                    progressText: progressText,
+                    compact: compact,
+                    dark: true,
+                  ),
+                ],
+              );
+            },
           ),
         ),
         _HitCelebrationBadge(visible: isHitCelebrating),
@@ -1224,31 +1083,151 @@ class _RoundScenePanel extends StatelessWidget {
   }
 }
 
-class _TinyInfoChip extends StatelessWidget {
-  const _TinyInfoChip({required this.label, required this.fontSize});
+class _RoundActionPanel extends StatelessWidget {
+  const _RoundActionPanel({
+    required this.hint,
+    required this.hintSuggested,
+    required this.hintRevealed,
+    required this.hintPenalty,
+    required this.skipPenalty,
+    required this.compact,
+    required this.onRevealHint,
+    required this.onSkipWord,
+  });
 
-  final String label;
-  final double fontSize;
+  final String hint;
+  final bool hintSuggested;
+  final bool hintRevealed;
+  final int hintPenalty;
+  final int skipPenalty;
+  final bool compact;
+  final VoidCallback onRevealHint;
+  final VoidCallback onSkipWord;
+
+  @override
+  Widget build(BuildContext context) {
+    final showHintControl = hintSuggested || hintRevealed;
+
+    return Container(
+      padding: EdgeInsets.all(compact ? 10 : 12),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            AppTheme.card.withValues(alpha: 0.98),
+            AppTheme.newsprint.withValues(alpha: 0.9),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppTheme.rule.withValues(alpha: 0.72)),
+        boxShadow: [
+          BoxShadow(
+            color: AppTheme.midnight.withValues(alpha: 0.08),
+            blurRadius: 12,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          if (hintRevealed) {
+            return Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _HintPanel(
+                  hint: hint,
+                  suggested: hintSuggested,
+                  revealed: true,
+                  hintPenalty: hintPenalty,
+                  compact: compact,
+                  onPressed: onRevealHint,
+                ),
+                SizedBox(height: compact ? 6 : 8),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: _SkipWordButton(
+                    penalty: skipPenalty,
+                    dense: compact,
+                    compact: compact,
+                    onPressed: onSkipWord,
+                  ),
+                ),
+              ],
+            );
+          }
+
+          return Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: showHintControl
+                        ? _HintPanel(
+                            hint: hint,
+                            suggested: hintSuggested,
+                            revealed: false,
+                            hintPenalty: hintPenalty,
+                            compact: compact,
+                            onPressed: onRevealHint,
+                          )
+                        : const _HintWaitingPill(),
+                  ),
+                  SizedBox(width: compact ? 8 : 10),
+                  _SkipWordButton(
+                    penalty: skipPenalty,
+                    dense: compact,
+                    compact: compact,
+                    onPressed: onSkipWord,
+                  ),
+                ],
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _HintWaitingPill extends StatelessWidget {
+  const _HintWaitingPill();
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+      constraints: const BoxConstraints(minHeight: 42),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
       decoration: BoxDecoration(
-        color: AppTheme.ink.withValues(alpha: 0.06),
-        borderRadius: BorderRadius.circular(6),
+        color: AppTheme.midnight.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(9),
         border: Border.all(color: AppTheme.rule.withValues(alpha: 0.55)),
       ),
-      child: Text(
-        label,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: TextStyle(
-          color: AppTheme.ink.withValues(alpha: 0.72),
-          fontSize: fontSize,
-          height: 1,
-          fontWeight: FontWeight.w800,
-        ),
+      child: Row(
+        children: [
+          Icon(
+            Icons.lightbulb_outline_rounded,
+            color: AppTheme.ink.withValues(alpha: 0.46),
+            size: 17,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Dica em instantes',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: AppTheme.ink.withValues(alpha: 0.58),
+                fontWeight: FontWeight.w800,
+                fontSize: 12.5,
+                letterSpacing: 0,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1313,10 +1292,15 @@ class _HitCelebrationBadge extends StatelessWidget {
 }
 
 class _ScoreChip extends StatelessWidget {
-  const _ScoreChip({required this.progressText, required this.compact});
+  const _ScoreChip({
+    required this.progressText,
+    required this.compact,
+    this.dark = false,
+  });
 
   final String progressText;
   final bool compact;
+  final bool dark;
 
   @override
   Widget build(BuildContext context) {
@@ -1327,17 +1311,23 @@ class _ScoreChip extends StatelessWidget {
         vertical: compact ? 5 : 6,
       ),
       decoration: BoxDecoration(
-        color: AppTheme.midnight.withValues(alpha: 0.08),
+        color: dark
+            ? Colors.white.withValues(alpha: 0.12)
+            : AppTheme.midnight.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: AppTheme.rule.withValues(alpha: 0.72)),
+        border: Border.all(
+          color: dark
+              ? Colors.white.withValues(alpha: 0.14)
+              : AppTheme.rule.withValues(alpha: 0.72),
+        ),
       ),
       child: FittedBox(
         fit: BoxFit.scaleDown,
         child: Text(
           progressText,
           maxLines: 1,
-          style: const TextStyle(
-            color: AppTheme.midnight,
+          style: TextStyle(
+            color: dark ? Colors.white : AppTheme.midnight,
             fontWeight: FontWeight.w900,
             fontSize: 12,
             letterSpacing: 0,
@@ -1356,7 +1346,6 @@ class _HintPanel extends StatelessWidget {
     required this.hintPenalty,
     required this.compact,
     required this.onPressed,
-    this.dense = false,
   });
 
   final String hint;
@@ -1364,7 +1353,6 @@ class _HintPanel extends StatelessWidget {
   final bool revealed;
   final int hintPenalty;
   final bool compact;
-  final bool dense;
   final VoidCallback onPressed;
 
   @override
@@ -1374,14 +1362,14 @@ class _HintPanel extends StatelessWidget {
         width: double.infinity,
         child: Container(
           padding: EdgeInsets.symmetric(
-            horizontal: dense ? 8 : 10,
-            vertical: dense ? 6 : 7,
+            horizontal: compact ? 8 : 10,
+            vertical: compact ? 6 : 7,
           ),
           decoration: BoxDecoration(
-            color: AppTheme.pressGold.withValues(alpha: 0.14),
-            borderRadius: BorderRadius.circular(7),
+            color: AppTheme.pressGold.withValues(alpha: 0.18),
+            borderRadius: BorderRadius.circular(9),
             border: Border.all(
-              color: AppTheme.pressGold.withValues(alpha: 0.34),
+              color: AppTheme.pressGold.withValues(alpha: 0.42),
             ),
           ),
           child: Row(
@@ -1390,23 +1378,19 @@ class _HintPanel extends StatelessWidget {
               Icon(
                 Icons.lightbulb_outline_rounded,
                 color: AppTheme.pressGold,
-                size: dense ? 13 : 14,
+                size: compact ? 13 : 14,
               ),
               const SizedBox(width: 6),
               Expanded(
                 child: Text(
                   'Dica: $hint',
-                  maxLines: dense ? 1 : 2,
-                  overflow: TextOverflow.ellipsis,
+                  maxLines: compact ? 2 : 3,
+                  overflow: TextOverflow.visible,
                   style: TextStyle(
                     color: AppTheme.midnight,
                     fontWeight: FontWeight.w800,
-                    fontSize: dense
-                        ? 10.5
-                        : compact
-                        ? 11
-                        : 12,
-                    height: 1.18,
+                    fontSize: compact ? 12.5 : 13.5,
+                    height: 1.22,
                   ),
                 ),
               ),
@@ -1424,7 +1408,7 @@ class _HintPanel extends StatelessWidget {
       onPressed: onPressed,
       icon: Icon(
         Icons.lightbulb_outline_rounded,
-        size: dense ? 14 : 15,
+        size: compact ? 16 : 18,
       ),
       label: Text(
         'Ver dica • -$hintPenalty pts',
@@ -1434,14 +1418,14 @@ class _HintPanel extends StatelessWidget {
       style: FilledButton.styleFrom(
         backgroundColor: AppTheme.pressGold,
         foregroundColor: AppTheme.midnight,
-        elevation: 2,
+        elevation: 3,
         shadowColor: AppTheme.midnight.withValues(alpha: 0.24),
         visualDensity: VisualDensity.compact,
         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        minimumSize: Size(0, dense ? 32 : 36),
+        minimumSize: Size(0, compact ? 42 : 46),
         padding: EdgeInsets.symmetric(
-          horizontal: dense ? 10 : 12,
-          vertical: dense ? 7 : 8,
+          horizontal: compact ? 14 : 16,
+          vertical: compact ? 10 : 12,
         ),
         shape: RoundedRectangleBorder(
           side: BorderSide(
@@ -1451,11 +1435,7 @@ class _HintPanel extends StatelessWidget {
         ),
         textStyle: TextStyle(
           fontWeight: FontWeight.w900,
-          fontSize: dense
-              ? 10.5
-              : compact
-              ? 11
-              : 12,
+          fontSize: compact ? 13 : 14,
           letterSpacing: 0,
         ),
       ),
@@ -1480,7 +1460,7 @@ class _SkipWordButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return OutlinedButton.icon(
       onPressed: onPressed,
-      icon: Icon(Icons.skip_next_rounded, size: dense ? 15 : 16),
+      icon: Icon(Icons.skip_next_rounded, size: dense ? 16 : 17),
       label: Text(
         'Pular • -$penalty pts',
         maxLines: 1,
@@ -1488,532 +1468,28 @@ class _SkipWordButton extends StatelessWidget {
       ),
       style: OutlinedButton.styleFrom(
         foregroundColor: AppTheme.pressRed,
-        backgroundColor: AppTheme.card.withValues(alpha: 0.82),
-        side: BorderSide(color: AppTheme.pressRed.withValues(alpha: 0.46)),
+        backgroundColor: AppTheme.pressRed.withValues(alpha: 0.06),
+        side: BorderSide(color: AppTheme.pressRed.withValues(alpha: 0.44)),
         visualDensity: VisualDensity.compact,
         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        minimumSize: Size(0, dense ? 30 : 34),
+        minimumSize: Size(0, dense ? 42 : 46),
         padding: EdgeInsets.symmetric(
-          horizontal: dense ? 9 : 11,
-          vertical: dense ? 6 : 7,
+          horizontal: dense ? 12 : 14,
+          vertical: dense ? 10 : 12,
         ),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(9)),
         textStyle: TextStyle(
           fontWeight: FontWeight.w900,
           fontSize: dense
-              ? 10.5
+              ? 11.5
               : compact
-              ? 11
-              : 12,
+              ? 12.5
+              : 13.5,
           letterSpacing: 0,
         ),
       ),
     );
   }
-}
-
-class _ScenePreview extends StatelessWidget {
-  const _ScenePreview({
-    required this.level,
-    required this.revealedFragments,
-    required this.totalFragments,
-  });
-
-  final GameLevel level;
-  final int revealedFragments;
-  final int totalFragments;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: level.sceneGradient,
-        ),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: AppTheme.rule.withValues(alpha: 0.68)),
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(10),
-        child: TweenAnimationBuilder<double>(
-          tween: Tween<double>(
-            begin: 0,
-            end: totalFragments <= 0
-                ? 0
-                : (revealedFragments / totalFragments).clamp(0.0, 1.0),
-          ),
-          duration: const Duration(milliseconds: 520),
-          curve: Curves.easeOutCubic,
-          builder: (context, completion, child) {
-            return CustomPaint(
-              painter: _ScenePreviewPainter(
-                level: level,
-                completion: completion,
-                totalFragments: totalFragments,
-              ),
-              child: child,
-            );
-          },
-          child: const SizedBox.expand(),
-        ),
-      ),
-    );
-  }
-}
-
-class _ScenePreviewPainter extends CustomPainter {
-  const _ScenePreviewPainter({
-    required this.level,
-    required this.completion,
-    required this.totalFragments,
-  });
-
-  final GameLevel level;
-  final double completion;
-  final int totalFragments;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final shinePaint = Paint()
-      ..shader = LinearGradient(
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-        colors: [
-          Colors.white.withValues(alpha: 0.32),
-          Colors.white.withValues(alpha: 0.04),
-        ],
-      ).createShader(Offset.zero & size);
-    canvas.drawRect(Offset.zero & size, shinePaint);
-
-    final pad = min(10.0, max(6.0, size.shortestSide * 0.12));
-    final page = Rect.fromLTWH(
-      pad,
-      pad,
-      max(1.0, size.width - (pad * 2)),
-      max(1.0, size.height - (pad * 2)),
-    );
-    final pageRadius = Radius.circular(max(5.0, size.shortestSide * 0.08));
-
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(page.translate(2, 2), pageRadius),
-      Paint()..color = AppTheme.midnight.withValues(alpha: 0.1),
-    );
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(page, pageRadius),
-      Paint()..color = AppTheme.card.withValues(alpha: 0.9),
-    );
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(page, pageRadius),
-      Paint()
-        ..color = AppTheme.midnight.withValues(alpha: 0.12)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1,
-    );
-
-    final inner = page.deflate(max(5.0, size.shortestSide * 0.08));
-    final foldPaint = Paint()
-      ..color = AppTheme.midnight.withValues(alpha: 0.08)
-      ..strokeWidth = 1;
-    canvas.drawLine(
-      Offset(page.left + (page.width * 0.52), page.top + 2),
-      Offset(page.left + (page.width * 0.52), page.bottom - 2),
-      foldPaint,
-    );
-
-    final headerHeight = max(12.0, inner.height * 0.16);
-    final header = Rect.fromLTWH(
-      inner.left,
-      inner.top,
-      inner.width,
-      headerHeight,
-    );
-    _drawMasthead(canvas, header);
-
-    final storyArea = Rect.fromLTWH(
-      inner.left,
-      header.bottom + max(4.0, inner.height * 0.05),
-      inner.width,
-      inner.height * 0.74,
-    );
-    _drawStorySections(canvas, storyArea);
-  }
-
-  void _drawMasthead(Canvas canvas, Rect header) {
-    final rulePaint = Paint()
-      ..color = AppTheme.midnight.withValues(alpha: 0.54)
-      ..strokeCap = StrokeCap.round
-      ..strokeWidth = max(0.8, header.height * 0.07);
-    canvas.drawLine(header.topLeft, header.topRight, rulePaint);
-    canvas.drawLine(header.bottomLeft, header.bottomRight, rulePaint);
-
-    final titlePainter = TextPainter(
-      text: TextSpan(
-        text: 'JORNAL',
-        style: TextStyle(
-          color: AppTheme.midnight.withValues(alpha: 0.82),
-          fontFamily: 'Georgia',
-          fontFamilyFallback: AppTheme.serifFallback,
-          fontSize: max(7.0, header.height * 0.42),
-          fontWeight: FontWeight.w900,
-          letterSpacing: 0,
-        ),
-      ),
-      maxLines: 1,
-      textDirection: TextDirection.ltr,
-    )..layout(maxWidth: header.width * 0.52);
-    titlePainter.paint(
-      canvas,
-      Offset(
-        header.center.dx - (titlePainter.width / 2),
-        header.center.dy - (titlePainter.height / 2),
-      ),
-    );
-
-    final ornamentPaint = Paint()
-      ..color = level.accent.withValues(alpha: 0.66)
-      ..strokeCap = StrokeCap.round
-      ..strokeWidth = max(1.0, header.height * 0.09);
-    final ornamentWidth = max(5.0, header.width * 0.17);
-    final gap = max(5.0, header.width * 0.06);
-    canvas.drawLine(
-      Offset(header.left, header.center.dy),
-      Offset(
-        min(header.center.dx - gap, header.left + ornamentWidth),
-        header.center.dy,
-      ),
-      ornamentPaint,
-    );
-    canvas.drawLine(
-      Offset(
-        max(header.center.dx + gap, header.right - ornamentWidth),
-        header.center.dy,
-      ),
-      Offset(header.right, header.center.dy),
-      ornamentPaint,
-    );
-
-    final datePaint = Paint()
-      ..color = AppTheme.midnight.withValues(alpha: 0.18)
-      ..strokeCap = StrokeCap.round
-      ..strokeWidth = max(0.8, header.height * 0.05);
-    canvas.drawLine(
-      Offset(header.left, header.top + header.height * 0.28),
-      Offset(
-        header.left + header.width * 0.22,
-        header.top + header.height * 0.28,
-      ),
-      datePaint,
-    );
-    canvas.drawLine(
-      Offset(
-        header.right - header.width * 0.2,
-        header.top + header.height * 0.72,
-      ),
-      Offset(header.right, header.top + header.height * 0.72),
-      datePaint,
-    );
-  }
-
-  void _drawStorySections(Canvas canvas, Rect area) {
-    if (totalFragments <= 0) {
-      return;
-    }
-
-    final gutter = max(6.0, area.width * 0.08);
-    final columnWidth = (area.width - gutter) / 2;
-    final leftColumn = Rect.fromLTWH(
-      area.left,
-      area.top,
-      columnWidth,
-      area.height,
-    );
-    final rightColumn = Rect.fromLTWH(
-      leftColumn.right + gutter,
-      area.top,
-      columnWidth,
-      area.height,
-    );
-    final photo = Rect.fromLTWH(
-      leftColumn.left,
-      leftColumn.top + leftColumn.height * 0.26,
-      leftColumn.width,
-      leftColumn.height * 0.34,
-    );
-
-    final sections = <_PaperSection>[
-      _PaperSection(
-        rect: Rect.fromLTWH(
-          leftColumn.left,
-          leftColumn.top,
-          leftColumn.width * 0.72,
-          leftColumn.height * 0.07,
-        ),
-        color: level.accent,
-        type: _PaperSectionType.rule,
-      ),
-      _PaperSection(
-        rect: Rect.fromLTWH(
-          leftColumn.left,
-          leftColumn.top + leftColumn.height * 0.11,
-          leftColumn.width,
-          leftColumn.height * 0.1,
-        ),
-        color: AppTheme.midnight,
-        type: _PaperSectionType.headline,
-      ),
-      _PaperSection(
-        rect: photo,
-        color: level.accent,
-        type: _PaperSectionType.photo,
-      ),
-      _PaperSection(
-        rect: Rect.fromLTWH(
-          leftColumn.left,
-          photo.bottom + leftColumn.height * 0.08,
-          leftColumn.width,
-          leftColumn.height * 0.08,
-        ),
-        color: AppTheme.pressRed,
-        type: _PaperSectionType.rule,
-      ),
-      _PaperSection(
-        rect: Rect.fromLTWH(
-          leftColumn.left,
-          photo.bottom + leftColumn.height * 0.2,
-          leftColumn.width * 0.78,
-          leftColumn.height * 0.07,
-        ),
-        color: AppTheme.pressBlue,
-        type: _PaperSectionType.rule,
-      ),
-      _PaperSection(
-        rect: Rect.fromLTWH(
-          rightColumn.left,
-          rightColumn.top,
-          rightColumn.width * 0.84,
-          rightColumn.height * 0.07,
-        ),
-        color: AppTheme.pressGold,
-        type: _PaperSectionType.rule,
-      ),
-      _PaperSection(
-        rect: Rect.fromLTWH(
-          rightColumn.left,
-          rightColumn.top + rightColumn.height * 0.12,
-          rightColumn.width,
-          rightColumn.height * 0.1,
-        ),
-        color: AppTheme.midnight,
-        type: _PaperSectionType.headline,
-      ),
-      _PaperSection(
-        rect: Rect.fromLTWH(
-          rightColumn.left,
-          rightColumn.top + rightColumn.height * 0.29,
-          rightColumn.width,
-          rightColumn.height * 0.12,
-        ),
-        color: AppTheme.pressGreen,
-        type: _PaperSectionType.column,
-      ),
-      _PaperSection(
-        rect: Rect.fromLTWH(
-          rightColumn.left,
-          rightColumn.top + rightColumn.height * 0.48,
-          rightColumn.width * 0.86,
-          rightColumn.height * 0.12,
-        ),
-        color: level.accent,
-        type: _PaperSectionType.column,
-      ),
-      _PaperSection(
-        rect: Rect.fromLTWH(
-          rightColumn.left,
-          rightColumn.bottom - rightColumn.height * 0.18,
-          rightColumn.width * 0.72,
-          rightColumn.height * 0.07,
-        ),
-        color: AppTheme.pressRed,
-        type: _PaperSectionType.rule,
-      ),
-      _PaperSection(
-        rect: Rect.fromLTWH(
-          rightColumn.right - rightColumn.height * 0.16,
-          rightColumn.bottom - rightColumn.height * 0.18,
-          rightColumn.height * 0.16,
-          rightColumn.height * 0.16,
-        ),
-        color: AppTheme.pressGold,
-        type: _PaperSectionType.seal,
-      ),
-    ];
-
-    final completedSections = completion * sections.length;
-    for (var i = 0; i < sections.length; i++) {
-      final section = sections[i];
-      final reveal = (completedSections - i).clamp(0.0, 1.0);
-      _drawSectionPlaceholder(canvas, section);
-      if (reveal > 0) {
-        _drawCompletedSection(canvas, section, reveal);
-      }
-    }
-  }
-
-  void _drawSectionPlaceholder(Canvas canvas, _PaperSection section) {
-    switch (section.type) {
-      case _PaperSectionType.seal:
-        canvas.drawCircle(
-          section.rect.center,
-          section.rect.shortestSide / 2,
-          Paint()..color = AppTheme.midnight.withValues(alpha: 0.08),
-        );
-      case _PaperSectionType.column:
-        final linePaint = Paint()
-          ..color = AppTheme.midnight.withValues(alpha: 0.12)
-          ..strokeCap = StrokeCap.round
-          ..strokeWidth = max(1.4, section.rect.height * 0.18);
-        for (var i = 0; i < 3; i++) {
-          final y = section.rect.top + (i * section.rect.height * 0.36);
-          final widthFactor = i == 2 ? 0.72 : 1.0;
-          canvas.drawLine(
-            Offset(section.rect.left, y),
-            Offset(section.rect.left + (section.rect.width * widthFactor), y),
-            linePaint,
-          );
-        }
-      case _PaperSectionType.photo:
-      case _PaperSectionType.headline:
-      case _PaperSectionType.rule:
-        final radius = Radius.circular(max(2.5, section.rect.height * 0.35));
-        canvas.drawRRect(
-          RRect.fromRectAndRadius(section.rect, radius),
-          Paint()..color = AppTheme.midnight.withValues(alpha: 0.08),
-        );
-    }
-  }
-
-  void _drawCompletedSection(
-    Canvas canvas,
-    _PaperSection section,
-    double reveal,
-  ) {
-    final rect = section.rect;
-    final clippedRect = Rect.fromLTRB(
-      rect.left,
-      rect.top,
-      rect.left + (rect.width * reveal),
-      rect.bottom,
-    );
-
-    canvas.save();
-    canvas.clipRect(clippedRect);
-
-    switch (section.type) {
-      case _PaperSectionType.seal:
-        final radius = (rect.shortestSide / 2) * (0.82 + (0.18 * reveal));
-        canvas.drawCircle(
-          rect.center,
-          radius,
-          Paint()..color = section.color.withValues(alpha: 0.9),
-        );
-        final checkPaint = Paint()
-          ..color = AppTheme.card.withValues(alpha: 0.96)
-          ..style = PaintingStyle.stroke
-          ..strokeCap = StrokeCap.round
-          ..strokeJoin = StrokeJoin.round
-          ..strokeWidth = max(1.4, rect.shortestSide * 0.14);
-        final check = Path()
-          ..moveTo(rect.left + rect.width * 0.28, rect.top + rect.height * 0.52)
-          ..lineTo(rect.left + rect.width * 0.44, rect.top + rect.height * 0.68)
-          ..lineTo(
-            rect.left + rect.width * 0.74,
-            rect.top + rect.height * 0.34,
-          );
-        canvas.drawPath(check, checkPaint);
-      case _PaperSectionType.column:
-        final linePaint = Paint()
-          ..color = section.color.withValues(alpha: 0.7 + (0.18 * reveal))
-          ..strokeCap = StrokeCap.round
-          ..strokeWidth = max(1.6, rect.height * 0.2);
-        for (var i = 0; i < 3; i++) {
-          final y = rect.top + (i * rect.height * 0.36);
-          final widthFactor = i == 2 ? 0.76 : 1.0;
-          canvas.drawLine(
-            Offset(rect.left, y),
-            Offset(rect.left + (rect.width * widthFactor), y),
-            linePaint,
-          );
-        }
-      case _PaperSectionType.photo:
-        final radius = Radius.circular(max(4.0, rect.width * 0.12));
-        canvas.drawRRect(
-          RRect.fromRectAndRadius(rect, radius),
-          Paint()
-            ..color = section.color.withValues(alpha: 0.28 + (0.42 * reveal)),
-        );
-        final sparklePaint = Paint()
-          ..color = AppTheme.card.withValues(alpha: 0.74)
-          ..strokeCap = StrokeCap.round
-          ..strokeWidth = max(1.0, rect.shortestSide * 0.06);
-        canvas.drawLine(
-          Offset(rect.left + rect.width * 0.24, rect.top + rect.height * 0.68),
-          Offset(rect.left + rect.width * 0.46, rect.top + rect.height * 0.42),
-          sparklePaint,
-        );
-        canvas.drawLine(
-          Offset(rect.left + rect.width * 0.46, rect.top + rect.height * 0.42),
-          Offset(rect.left + rect.width * 0.72, rect.top + rect.height * 0.62),
-          sparklePaint,
-        );
-      case _PaperSectionType.headline:
-        final radius = Radius.circular(max(3.0, rect.height * 0.28));
-        canvas.drawRRect(
-          RRect.fromRectAndRadius(rect, radius),
-          Paint()..color = section.color.withValues(alpha: 0.82),
-        );
-        final highlight = Rect.fromLTWH(
-          rect.left,
-          rect.top + rect.height * 0.66,
-          rect.width,
-          max(1.0, rect.height * 0.16),
-        );
-        canvas.drawRRect(
-          RRect.fromRectAndRadius(highlight, Radius.circular(highlight.height)),
-          Paint()..color = AppTheme.pressGold.withValues(alpha: 0.72),
-        );
-      case _PaperSectionType.rule:
-        final radius = Radius.circular(max(2.5, rect.height * 0.38));
-        canvas.drawRRect(
-          RRect.fromRectAndRadius(rect, radius),
-          Paint()..color = section.color.withValues(alpha: 0.78),
-        );
-    }
-
-    canvas.restore();
-  }
-
-  @override
-  bool shouldRepaint(covariant _ScenePreviewPainter oldDelegate) {
-    return oldDelegate.level != level ||
-        oldDelegate.completion != completion ||
-        oldDelegate.totalFragments != totalFragments;
-  }
-}
-
-enum _PaperSectionType { rule, headline, photo, column, seal }
-
-class _PaperSection {
-  const _PaperSection({
-    required this.rect,
-    required this.color,
-    required this.type,
-  });
-
-  final Rect rect;
-  final Color color;
-  final _PaperSectionType type;
 }
 
 class _GridBoard extends StatelessWidget {
@@ -2065,7 +1541,7 @@ class _GridBoard extends StatelessWidget {
         ],
       ),
       child: Padding(
-        padding: EdgeInsets.all(compact ? 8 : 12),
+        padding: EdgeInsets.all(compact ? 3 : 5),
         child: LayoutBuilder(
           builder: (context, constraints) {
             final metrics = _BoardMetrics.forSize(
@@ -2073,8 +1549,8 @@ class _GridBoard extends StatelessWidget {
               gridSize: gridSize,
             );
             final letterSize = max(
-              12.0,
-              min(28.0, metrics.cellSize * (gridSize >= 8 ? 0.48 : 0.44)),
+              16.0,
+              min(36.0, metrics.cellSize * (gridSize >= 6 ? 0.52 : 0.5)),
             );
             final radius = max(6.0, min(10.0, metrics.cellSize * 0.22));
 
@@ -2294,12 +1770,12 @@ class _BoardMetrics {
 
   factory _BoardMetrics.forSize({required double size, required int gridSize}) {
     final spacing = switch (gridSize) {
-      >= 8 when size < 240 => 4.0,
-      >= 8 => 5.0,
-      >= 6 when size < 240 => 5.0,
-      >= 6 => 7.0,
-      _ when size < 240 => 8.0,
-      _ => 10.0,
+      >= 6 when size < 300 => 3.0,
+      >= 6 => 4.0,
+      >= 5 when size < 300 => 4.0,
+      >= 5 => 5.0,
+      _ when size < 240 => 6.0,
+      _ => 7.0,
     };
 
     return _BoardMetrics(size: size, gridSize: gridSize, spacing: spacing);
@@ -2337,13 +1813,6 @@ class _BoardMetrics {
       return null;
     }
 
-    final localX = position.dx - (column * stride);
-    final localY = position.dy - (row * stride);
-
-    if (localX > cellSize || localY > cellSize) {
-      return null;
-    }
-
     return (row * gridSize) + column;
   }
 }
@@ -2355,11 +1824,8 @@ class _GameLayoutMetrics {
     required this.bottomPadding,
     required this.sectionGap,
     required this.contentGap,
-    required this.bannerGap,
     required this.minPanelHeight,
-    required this.hintPanelHeightAllowance,
-    required this.minBoardSize,
-    required this.boardHeightFactor,
+    required this.actionPanelHeight,
     required this.compact,
     required this.prioritizeBoard,
   });
@@ -2371,19 +1837,14 @@ class _GameLayoutMetrics {
     final compact = constraints.maxHeight < 720 || constraints.maxWidth < 380;
     final veryCompact =
         constraints.maxHeight < 620 || constraints.maxWidth < 340;
-    final prioritizeBoard = gridSize >= 8 || constraints.maxHeight < 640;
-    final boardHeightFactor = switch (gridSize) {
-      >= 8 => veryCompact ? 0.6 : 0.64,
-      >= 6 => veryCompact ? 0.58 : 0.62,
-      _ => veryCompact ? 0.52 : 0.58,
-    };
+    final prioritizeBoard = gridSize >= 6 || constraints.maxHeight < 700;
 
     return _GameLayoutMetrics(
       horizontalPadding: veryCompact
-          ? 10.0
+          ? 6.0
           : compact
-          ? 12.0
-          : 16.0,
+          ? 8.0
+          : 12.0,
       topPadding: veryCompact ? 0.0 : 2.0,
       bottomPadding: veryCompact ? 8.0 : 14.0,
       sectionGap: prioritizeBoard
@@ -2394,25 +1855,18 @@ class _GameLayoutMetrics {
           ? 10.0
           : 12.0,
       contentGap: veryCompact ? 6.0 : 7.0,
-      bannerGap: veryCompact ? 6.0 : 8.0,
       minPanelHeight: prioritizeBoard
           ? veryCompact
-                ? 118.0
-                : 138.0
+                ? 56.0
+                : 62.0
           : compact
-          ? 144.0
-          : 164.0,
-      hintPanelHeightAllowance: veryCompact
-          ? 34.0
+          ? 64.0
+          : 70.0,
+      actionPanelHeight: veryCompact
+          ? 108.0
           : compact
-          ? 30.0
-          : 24.0,
-      minBoardSize: gridSize >= 8
-          ? 286.0
-          : gridSize >= 6
-          ? 270.0
-          : 218.0,
-      boardHeightFactor: boardHeightFactor,
+          ? 114.0
+          : 126.0,
       compact: compact,
       prioritizeBoard: prioritizeBoard,
     );
@@ -2423,11 +1877,8 @@ class _GameLayoutMetrics {
   final double bottomPadding;
   final double sectionGap;
   final double contentGap;
-  final double bannerGap;
   final double minPanelHeight;
-  final double hintPanelHeightAllowance;
-  final double minBoardSize;
-  final double boardHeightFactor;
+  final double actionPanelHeight;
   final bool compact;
   final bool prioritizeBoard;
 }
@@ -2580,7 +2031,7 @@ class _HeaderScorePill extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: EdgeInsets.symmetric(
-        horizontal: compact ? 12 : 13,
+        horizontal: compact ? 14 : 15,
         vertical: compact ? 8 : 9,
       ),
       decoration: BoxDecoration(
@@ -2588,26 +2039,13 @@ class _HeaderScorePill extends StatelessWidget {
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          Text(
-            '$score',
-            style: TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.w900,
-              fontSize: fontSize,
-            ),
-          ),
-          Text(
-            'pontos',
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.72),
-              fontWeight: FontWeight.w700,
-              fontSize: compact ? 11 : 12,
-            ),
-          ),
-        ],
+      child: Text(
+        '$score',
+        style: TextStyle(
+          color: Colors.white,
+          fontWeight: FontWeight.w900,
+          fontSize: fontSize,
+        ),
       ),
     );
   }

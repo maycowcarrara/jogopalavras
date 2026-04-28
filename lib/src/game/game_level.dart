@@ -20,9 +20,9 @@ extension GameLevelDetails on GameLevel {
 
   String get tag => switch (this) {
     GameLevel.easy => '4x4',
-    GameLevel.medium => '6x6',
-    GameLevel.hard => '8x8',
-    GameLevel.pautaLivre => '8x8',
+    GameLevel.medium => '5x5',
+    GameLevel.hard => '6x6',
+    GameLevel.pautaLivre => '6x6',
   };
 
   String get wordSizeShortLabel => switch (this) {
@@ -41,9 +41,9 @@ extension GameLevelDetails on GameLevel {
 
   int get gridSize => switch (this) {
     GameLevel.easy => 4,
-    GameLevel.medium => 6,
-    GameLevel.hard => 8,
-    GameLevel.pautaLivre => 8,
+    GameLevel.medium => 5,
+    GameLevel.hard => 6,
+    GameLevel.pautaLivre => 6,
   };
 
   int get targetWordCount => switch (this) {
