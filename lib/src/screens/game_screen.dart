@@ -607,31 +607,21 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                               final gap = layout.contentGap;
                               final maxMiddleHeight =
                                   contentConstraints.maxHeight;
-                              final statusHeight = min(
-                                layout.statusHeight,
-                                max(68.0, maxMiddleHeight * 0.18),
-                              );
                               final targetBoardSize = min(
                                 contentConstraints.maxWidth,
                                 maxMiddleHeight * layout.boardHeightFactor,
                               );
-                              final maxBoardWithScene = max(
+                              final maxBoardWithPanel = max(
                                 layout.minBoardSize,
-                                maxMiddleHeight -
-                                    statusHeight -
-                                    (gap * 2) -
-                                    layout.minSceneHeight,
+                                maxMiddleHeight - gap - layout.minPanelHeight,
                               );
                               final boardSize = min(
                                 targetBoardSize,
-                                maxBoardWithScene,
+                                maxBoardWithPanel,
                               );
-                              final sceneHeight = max(
-                                72.0,
-                                maxMiddleHeight -
-                                    boardSize -
-                                    statusHeight -
-                                    (gap * 2),
+                              final panelHeight = max(
+                                layout.minPanelHeight,
+                                maxMiddleHeight - boardSize - gap,
                               );
 
                               return Column(
@@ -640,20 +630,8 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                                   RevealOnMount(
                                     delay: const Duration(milliseconds: 80),
                                     child: SizedBox(
-                                      height: sceneHeight,
-                                      child: _ScenePreview(
-                                        level: widget.level,
-                                        revealedFragments: revealedFragments,
-                                        totalFragments: _progressFragments,
-                                      ),
-                                    ),
-                                  ),
-                                  SizedBox(height: gap),
-                                  RevealOnMount(
-                                    delay: const Duration(milliseconds: 120),
-                                    child: SizedBox(
-                                      height: statusHeight,
-                                      child: _RoundShowcaseCard(
+                                      height: panelHeight,
+                                      child: _RoundScenePanel(
                                         level: widget.level,
                                         currentWord: _currentWord,
                                         targetWordLength: _targetWord.length,
@@ -672,12 +650,14 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                                         musicEnabled: _musicEnabled,
                                         onToggleMusic: _toggleMusic,
                                         onRevealHint: _revealHint,
+                                        revealedFragments: revealedFragments,
+                                        totalFragments: _progressFragments,
                                       ),
                                     ),
                                   ),
                                   SizedBox(height: gap),
                                   RevealOnMount(
-                                    delay: const Duration(milliseconds: 160),
+                                    delay: const Duration(milliseconds: 130),
                                     child: Align(
                                       alignment: Alignment.bottomCenter,
                                       child: SizedBox.square(
@@ -840,8 +820,8 @@ class _GameHeader extends StatelessWidget {
   }
 }
 
-class _RoundShowcaseCard extends StatelessWidget {
-  const _RoundShowcaseCard({
+class _RoundScenePanel extends StatelessWidget {
+  const _RoundScenePanel({
     required this.level,
     required this.currentWord,
     required this.targetWordLength,
@@ -859,6 +839,8 @@ class _RoundShowcaseCard extends StatelessWidget {
     required this.musicEnabled,
     required this.onToggleMusic,
     required this.onRevealHint,
+    required this.revealedFragments,
+    required this.totalFragments,
   });
 
   final GameLevel level;
@@ -878,6 +860,8 @@ class _RoundShowcaseCard extends StatelessWidget {
   final bool musicEnabled;
   final VoidCallback onToggleMusic;
   final VoidCallback onRevealHint;
+  final int revealedFragments;
+  final int totalFragments;
 
   @override
   Widget build(BuildContext context) {
@@ -890,14 +874,14 @@ class _RoundShowcaseCard extends StatelessWidget {
       return '•';
     }).join(' ');
     final typingText = isHitCelebrating ? '$currentText ▌' : currentText;
-    final showHintControl = hintSuggested || hintRevealed;
     final progressText = '$score/$goalScore pontos';
+    final showHintControl = hintSuggested || hintRevealed;
 
     return Stack(
       clipBehavior: Clip.none,
       children: [
         Container(
-          padding: EdgeInsets.all(compact ? 14 : 16),
+          padding: EdgeInsets.all(compact ? 12 : 14),
           decoration: BoxDecoration(
             color: isHitCelebrating
                 ? AppTheme.card.withValues(alpha: 0.99)
@@ -918,35 +902,48 @@ class _RoundShowcaseCard extends StatelessWidget {
               ),
             ],
           ),
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final ultraCompact =
-                  constraints.maxHeight < 142 || constraints.maxWidth < 360;
-
-              if (ultraCompact) {
-                if (constraints.maxHeight < 58) {
-                  return Row(
-                    children: [
-                      Expanded(
-                        flex: 4,
-                        child: Text(
-                          level.sceneTitle,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: AppTheme.midnight,
-                            fontWeight: FontWeight.w900,
-                            fontSize: 14,
-                          ),
+          child: Row(
+            children: [
+              Expanded(
+                flex: 10,
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final micro = constraints.maxHeight < 128;
+                    return Column(
+                      mainAxisAlignment: micro
+                          ? MainAxisAlignment.center
+                          : MainAxisAlignment.start,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                level.sceneTitle,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: AppTheme.midnight,
+                                  fontWeight: FontWeight.w900,
+                                  fontSize: compact ? 14 : 15,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            _MusicToggleButton(
+                              enabled: musicEnabled,
+                              onPressed: onToggleMusic,
+                              size: compact ? 32 : 34,
+                            ),
+                          ],
                         ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        flex: 5,
-                        child: AnimatedSwitcher(
+                        SizedBox(height: micro ? 4 : 7),
+                        AnimatedSwitcher(
                           duration: const Duration(milliseconds: 180),
                           child: Text(
-                            isHitCelebrating ? typingText : progressText,
+                            isHitCelebrating
+                                ? typingText
+                                : '$currentText  •  $progressText',
                             key: ValueKey<String>(
                               '$typingText-$score-$goalScore-$isHitCelebrating',
                             ),
@@ -959,220 +956,62 @@ class _RoundShowcaseCard extends StatelessWidget {
                                   ? AppTheme.pressRed
                                   : AppTheme.midnight,
                               fontWeight: FontWeight.w900,
-                              fontSize: 15,
+                              fontSize: compact ? 15 : 17,
                               letterSpacing: 0,
                             ),
                           ),
                         ),
-                      ),
-                      const SizedBox(width: 8),
-                      _MusicToggleButton(
-                        enabled: musicEnabled,
-                        onPressed: onToggleMusic,
-                        size: 32,
-                      ),
-                    ],
-                  );
-                }
-
-                return Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  level.sceneTitle,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    color: AppTheme.midnight,
-                                    fontWeight: FontWeight.w900,
-                                    fontSize: 14,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              _MusicToggleButton(
-                                enabled: musicEnabled,
-                                onPressed: onToggleMusic,
-                                size: 34,
-                              ),
-                            ],
-                          ),
+                        if (!micro) ...[
                           const SizedBox(height: 6),
-                          AnimatedSwitcher(
-                            duration: const Duration(milliseconds: 180),
-                            child: Text(
-                              isHitCelebrating
-                                  ? typingText
-                                  : '$currentText  •  $progressText',
-                              key: ValueKey<String>(
-                                '$typingText-$score-$goalScore-$isHitCelebrating',
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                color: isHitCelebrating
-                                    ? AppTheme.pressRed
-                                    : hasError
-                                    ? AppTheme.pressRed
-                                    : AppTheme.midnight,
-                                fontWeight: FontWeight.w900,
-                                fontSize: 16,
-                                letterSpacing: 0,
-                              ),
-                            ),
-                          ),
-                          if (showHintControl) ...[
-                            const SizedBox(height: 6),
-                            _HintPanel(
-                              hint: hint,
-                              suggested: hintSuggested,
-                              revealed: hintRevealed,
-                              hintedHitPoints: hintedHitPoints,
-                              compact: true,
-                              dense: true,
-                              onPressed: onRevealHint,
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                  ],
-                );
-              }
-
-              return Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    level.sceneTitle,
-                                    style: TextStyle(
-                                      color: AppTheme.midnight,
-                                      fontWeight: FontWeight.w900,
-                                      fontSize: compact ? 15 : 16,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    level.sceneSubtitle,
-                                    maxLines: compact ? 2 : 3,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                      color: AppTheme.ink.withValues(
-                                        alpha: 0.76,
-                                      ),
-                                      fontWeight: FontWeight.w600,
-                                      fontSize: compact ? 11.5 : 12.5,
-                                      height: 1.25,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 6),
-                                  if (showHintControl)
-                                    _HintPanel(
-                                      hint: hint,
-                                      suggested: hintSuggested,
-                                      revealed: hintRevealed,
-                                      hintedHitPoints: hintedHitPoints,
-                                      compact: compact,
-                                      onPressed: onRevealHint,
-                                    )
-                                  else
-                                    Text(
-                                      musicEnabled
-                                          ? 'Trilha: ${level.soundtrackLabel}'
-                                          : 'Trilha pausada',
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: TextStyle(
-                                        color: musicEnabled
-                                            ? AppTheme.pressBlue
-                                            : AppTheme.ink.withValues(
-                                                alpha: 0.6,
-                                              ),
-                                        fontWeight: FontWeight.w800,
-                                        fontSize: compact ? 11 : 12,
-                                      ),
-                                    ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            _MusicToggleButton(
-                              enabled: musicEnabled,
-                              onPressed: onToggleMusic,
-                            ),
-                          ],
-                        ),
-                        const Spacer(),
-                        Text(
-                          isHitCelebrating ? 'Na rotativa' : 'Montagem atual',
-                          style: TextStyle(
-                            color: isHitCelebrating
-                                ? AppTheme.pressRed
-                                : AppTheme.ink.withValues(alpha: 0.66),
-                            fontWeight: FontWeight.w700,
-                            fontSize: compact ? 11 : 12,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        AnimatedSwitcher(
-                          duration: const Duration(milliseconds: 180),
-                          child: Text(
-                            typingText,
-                            key: ValueKey<String>(
-                              '$typingText-$isHitCelebrating',
-                            ),
+                          Text(
+                            '${level.wordSizeShortLabel} • tabuleiro ${level.tag}',
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
-                              color: isHitCelebrating
-                                  ? AppTheme.pressRed
-                                  : hasError
-                                  ? AppTheme.pressRed
-                                  : AppTheme.midnight,
-                              fontWeight: FontWeight.w900,
-                              fontSize: compact ? 20 : 22,
-                              letterSpacing: 0,
+                              color: AppTheme.ink.withValues(alpha: 0.7),
+                              fontWeight: FontWeight.w700,
+                              fontSize: compact ? 11 : 12,
                             ),
                           ),
-                        ),
-                        const SizedBox(height: 8),
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: [
-                            _ShowcasePill(
-                              icon: Icons.article_outlined,
-                              label: progressText,
+                          const SizedBox(height: 8),
+                        ] else
+                          const SizedBox(height: 5),
+                        if (showHintControl)
+                          _HintPanel(
+                            hint: hint,
+                            suggested: hintSuggested,
+                            revealed: hintRevealed,
+                            hintedHitPoints: hintedHitPoints,
+                            compact: true,
+                            dense: true,
+                            onPressed: onRevealHint,
+                          )
+                        else if (!micro)
+                          Text(
+                            '$discoveredCount acertos',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: AppTheme.ink.withValues(alpha: 0.62),
+                              fontWeight: FontWeight.w800,
+                              fontSize: compact ? 11 : 12,
                             ),
-                            _ShowcasePill(
-                              icon: Icons.check_circle_rounded,
-                              label: '$discoveredCount acertos',
-                            ),
-                          ],
-                        ),
+                          ),
                       ],
-                    ),
-                  ),
-                ],
-              );
-            },
+                    );
+                  },
+                ),
+              ),
+              SizedBox(width: compact ? 10 : 14),
+              Expanded(
+                flex: 12,
+                child: _ScenePreview(
+                  level: level,
+                  revealedFragments: revealedFragments,
+                  totalFragments: totalFragments,
+                ),
+              ),
+            ],
           ),
         ),
         _HitCelebrationBadge(visible: isHitCelebrating),
@@ -1564,33 +1403,44 @@ class _ScenePreviewPainter extends CustomPainter {
       return;
     }
 
-    final photoWidth = area.width * 0.38;
-    final photo = Rect.fromLTWH(
+    final gutter = max(6.0, area.width * 0.08);
+    final columnWidth = (area.width - gutter) / 2;
+    final leftColumn = Rect.fromLTWH(
       area.left,
-      area.top + area.height * 0.18,
-      photoWidth,
-      area.height * 0.48,
+      area.top,
+      columnWidth,
+      area.height,
     );
-    final contentLeft = photo.right + max(5.0, area.width * 0.08);
-    final contentWidth = area.right - contentLeft;
+    final rightColumn = Rect.fromLTWH(
+      leftColumn.right + gutter,
+      area.top,
+      columnWidth,
+      area.height,
+    );
+    final photo = Rect.fromLTWH(
+      leftColumn.left,
+      leftColumn.top + leftColumn.height * 0.26,
+      leftColumn.width,
+      leftColumn.height * 0.34,
+    );
 
     final sections = <_PaperSection>[
       _PaperSection(
         rect: Rect.fromLTWH(
-          area.left,
-          area.top,
-          area.width * 0.58,
-          area.height * 0.08,
+          leftColumn.left,
+          leftColumn.top,
+          leftColumn.width * 0.72,
+          leftColumn.height * 0.07,
         ),
         color: level.accent,
         type: _PaperSectionType.rule,
       ),
       _PaperSection(
         rect: Rect.fromLTWH(
-          area.left,
-          area.top + area.height * 0.11,
-          area.width,
-          area.height * 0.12,
+          leftColumn.left,
+          leftColumn.top + leftColumn.height * 0.11,
+          leftColumn.width,
+          leftColumn.height * 0.1,
         ),
         color: AppTheme.midnight,
         type: _PaperSectionType.headline,
@@ -1602,70 +1452,80 @@ class _ScenePreviewPainter extends CustomPainter {
       ),
       _PaperSection(
         rect: Rect.fromLTWH(
-          contentLeft,
-          photo.top,
-          contentWidth,
-          area.height * 0.09,
+          leftColumn.left,
+          photo.bottom + leftColumn.height * 0.08,
+          leftColumn.width,
+          leftColumn.height * 0.08,
         ),
         color: AppTheme.pressRed,
         type: _PaperSectionType.rule,
       ),
       _PaperSection(
         rect: Rect.fromLTWH(
-          contentLeft,
-          photo.top + area.height * 0.14,
-          contentWidth * 0.82,
-          area.height * 0.08,
+          leftColumn.left,
+          photo.bottom + leftColumn.height * 0.2,
+          leftColumn.width * 0.78,
+          leftColumn.height * 0.07,
         ),
         color: AppTheme.pressBlue,
         type: _PaperSectionType.rule,
       ),
       _PaperSection(
         rect: Rect.fromLTWH(
-          contentLeft,
-          photo.top + area.height * 0.28,
-          contentWidth,
-          area.height * 0.08,
+          rightColumn.left,
+          rightColumn.top,
+          rightColumn.width * 0.84,
+          rightColumn.height * 0.07,
         ),
         color: AppTheme.pressGold,
         type: _PaperSectionType.rule,
       ),
       _PaperSection(
         rect: Rect.fromLTWH(
-          area.left,
-          photo.bottom + area.height * 0.08,
-          area.width * 0.46,
-          area.height * 0.13,
+          rightColumn.left,
+          rightColumn.top + rightColumn.height * 0.12,
+          rightColumn.width,
+          rightColumn.height * 0.1,
+        ),
+        color: AppTheme.midnight,
+        type: _PaperSectionType.headline,
+      ),
+      _PaperSection(
+        rect: Rect.fromLTWH(
+          rightColumn.left,
+          rightColumn.top + rightColumn.height * 0.29,
+          rightColumn.width,
+          rightColumn.height * 0.12,
         ),
         color: AppTheme.pressGreen,
         type: _PaperSectionType.column,
       ),
       _PaperSection(
         rect: Rect.fromLTWH(
-          area.left + area.width * 0.52,
-          photo.bottom + area.height * 0.08,
-          area.width * 0.48,
-          area.height * 0.13,
+          rightColumn.left,
+          rightColumn.top + rightColumn.height * 0.48,
+          rightColumn.width * 0.86,
+          rightColumn.height * 0.12,
         ),
         color: level.accent,
         type: _PaperSectionType.column,
       ),
       _PaperSection(
         rect: Rect.fromLTWH(
-          area.left,
-          area.bottom - area.height * 0.09,
-          area.width * 0.68,
-          area.height * 0.07,
+          rightColumn.left,
+          rightColumn.bottom - rightColumn.height * 0.18,
+          rightColumn.width * 0.72,
+          rightColumn.height * 0.07,
         ),
         color: AppTheme.pressRed,
         type: _PaperSectionType.rule,
       ),
       _PaperSection(
         rect: Rect.fromLTWH(
-          area.right - area.height * 0.16,
-          area.bottom - area.height * 0.16,
-          area.height * 0.16,
-          area.height * 0.16,
+          rightColumn.right - rightColumn.height * 0.16,
+          rightColumn.bottom - rightColumn.height * 0.18,
+          rightColumn.height * 0.16,
+          rightColumn.height * 0.16,
         ),
         color: AppTheme.pressGold,
         type: _PaperSectionType.seal,
@@ -2097,8 +1957,7 @@ class _GameLayoutMetrics {
     required this.sectionGap,
     required this.contentGap,
     required this.bannerGap,
-    required this.statusHeight,
-    required this.minSceneHeight,
+    required this.minPanelHeight,
     required this.minBoardSize,
     required this.boardHeightFactor,
     required this.compact,
@@ -2114,47 +1973,40 @@ class _GameLayoutMetrics {
         constraints.maxHeight < 620 || constraints.maxWidth < 340;
     final prioritizeBoard = gridSize >= 8 || constraints.maxHeight < 640;
     final boardHeightFactor = switch (gridSize) {
-      >= 8 => veryCompact ? 0.56 : 0.58,
-      >= 6 => veryCompact ? 0.52 : 0.54,
-      _ => veryCompact ? 0.44 : 0.48,
+      >= 8 => veryCompact ? 0.6 : 0.64,
+      >= 6 => veryCompact ? 0.58 : 0.62,
+      _ => veryCompact ? 0.52 : 0.58,
     };
 
     return _GameLayoutMetrics(
       horizontalPadding: veryCompact
-          ? 14.0
-          : compact
-          ? 16.0
-          : 20.0,
-      topPadding: veryCompact ? 0.0 : 2.0,
-      bottomPadding: veryCompact ? 12.0 : 20.0,
-      sectionGap: prioritizeBoard
-          ? 8.0
-          : veryCompact
           ? 10.0
           : compact
           ? 12.0
           : 16.0,
-      contentGap: veryCompact ? 7.0 : 8.0,
+      topPadding: veryCompact ? 0.0 : 2.0,
+      bottomPadding: veryCompact ? 8.0 : 14.0,
+      sectionGap: prioritizeBoard
+          ? 6.0
+          : veryCompact
+          ? 8.0
+          : compact
+          ? 10.0
+          : 12.0,
+      contentGap: veryCompact ? 6.0 : 7.0,
       bannerGap: veryCompact ? 6.0 : 8.0,
-      statusHeight: prioritizeBoard
+      minPanelHeight: prioritizeBoard
           ? veryCompact
-                ? 78.0
-                : 86.0
+                ? 118.0
+                : 138.0
           : compact
-          ? 92.0
-          : 104.0,
-      minSceneHeight: prioritizeBoard
-          ? veryCompact
-                ? 92.0
-                : 112.0
-          : compact
-          ? 124.0
-          : 150.0,
+          ? 144.0
+          : 164.0,
       minBoardSize: gridSize >= 8
-          ? 270.0
+          ? 286.0
           : gridSize >= 6
-          ? 248.0
-          : 188.0,
+          ? 270.0
+          : 218.0,
       boardHeightFactor: boardHeightFactor,
       compact: compact,
       prioritizeBoard: prioritizeBoard,
@@ -2167,8 +2019,7 @@ class _GameLayoutMetrics {
   final double sectionGap;
   final double contentGap;
   final double bannerGap;
-  final double statusHeight;
-  final double minSceneHeight;
+  final double minPanelHeight;
   final double minBoardSize;
   final double boardHeightFactor;
   final bool compact;
@@ -2352,40 +2203,6 @@ class _MusicToggleButton extends StatelessWidget {
             size: size * 0.48,
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _ShowcasePill extends StatelessWidget {
-  const _ShowcasePill({required this.icon, required this.label});
-
-  final IconData icon;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-      decoration: BoxDecoration(
-        color: AppTheme.midnight.withValues(alpha: 0.06),
-        borderRadius: BorderRadius.circular(7),
-        border: Border.all(color: AppTheme.rule.withValues(alpha: 0.55)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 14, color: AppTheme.pressBlue),
-          const SizedBox(width: 6),
-          Text(
-            label,
-            style: const TextStyle(
-              color: AppTheme.midnight,
-              fontWeight: FontWeight.w800,
-              fontSize: 12,
-            ),
-          ),
-        ],
       ),
     );
   }

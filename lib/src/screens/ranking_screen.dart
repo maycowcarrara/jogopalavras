@@ -4,6 +4,7 @@ import 'package:jogopalavras/src/game/ranking_store.dart';
 import 'package:jogopalavras/src/navigation/app_page_route.dart';
 import 'package:jogopalavras/src/screens/game_screen.dart';
 import 'package:jogopalavras/src/theme/app_theme.dart';
+import 'package:jogopalavras/src/widgets/ad_banner_slot.dart';
 import 'package:jogopalavras/src/widgets/app_backdrop.dart';
 import 'package:jogopalavras/src/widgets/reveal_on_mount.dart';
 
@@ -34,6 +35,10 @@ class RankingScreen extends StatelessWidget {
               for (final level in GameLevel.values) Tab(text: level.title),
             ],
           ),
+        ),
+        bottomNavigationBar: const AdBannerSlot(
+          compact: true,
+          safeAreaMinimum: EdgeInsets.fromLTRB(18, 0, 18, 10),
         ),
         body: AppBackdrop(
           primary: AppTheme.pressBlue,
