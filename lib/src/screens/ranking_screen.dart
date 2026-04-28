@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:jogopalavras/src/game/game_level.dart';
 import 'package:jogopalavras/src/game/ranking_store.dart';
 import 'package:jogopalavras/src/navigation/app_page_route.dart';
@@ -37,8 +38,8 @@ class RankingScreen extends StatelessWidget {
           ),
         ),
         bottomNavigationBar: const AdBannerSlot(
-          compact: true,
-          safeAreaMinimum: EdgeInsets.fromLTRB(18, 0, 18, 10),
+          adSize: AdSize.largeBanner,
+          safeAreaMinimum: EdgeInsets.fromLTRB(18, 0, 18, 12),
         ),
         body: AppBackdrop(
           primary: AppTheme.pressBlue,
@@ -145,7 +146,7 @@ class _RankingHeader extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Maior pontuação, menos palavras e menor tempo.',
+                  'Pontuação por eficiência: menos palavras e menor tempo.',
                   style: TextStyle(
                     color: Colors.white.withValues(alpha: 0.78),
                     height: 1.25,

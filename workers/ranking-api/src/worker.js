@@ -202,11 +202,15 @@ function normalizeEntry(entry) {
   return {
     initials,
     level,
-    score,
+    score: scoreForPerformance(words, elapsedSeconds),
     words,
     elapsedSeconds,
     completedAt: completedAt.toISOString(),
   };
+}
+
+function scoreForPerformance(words, elapsedSeconds) {
+  return Math.max(0, 1000 - words * 30 - elapsedSeconds);
 }
 
 function sortEntries(entries) {

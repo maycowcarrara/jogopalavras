@@ -28,10 +28,15 @@ class GameScreen extends StatefulWidget {
 enum _VictoryAction { back, ranking, replay }
 
 class _InitialsDialog extends StatefulWidget {
-  const _InitialsDialog({required this.score, required this.words});
+  const _InitialsDialog({
+    required this.score,
+    required this.words,
+    required this.initialInitials,
+  });
 
   final int score;
   final int words;
+  final String initialInitials;
 
   @override
   State<_InitialsDialog> createState() => _InitialsDialogState();
@@ -44,7 +49,11 @@ class _InitialsDialogState extends State<_InitialsDialog> {
   @override
   void initState() {
     super.initState();
-    _controller = TextEditingController();
+    _currentInitials = widget.initialInitials;
+    _controller = TextEditingController(text: _currentInitials);
+    _controller.selection = TextSelection.collapsed(
+      offset: _currentInitials.length,
+    );
   }
 
   @override
@@ -138,13 +147,14 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   static const Duration _typewriterTick = Duration(milliseconds: 78);
   static const Duration _hitCelebrationHold = Duration(milliseconds: 900);
 
-  late final WordDeck<WordEntry> _wordDeck;
+  late final Map<GameLevel, WordDeck<WordEntry>> _wordDecks;
   late final Random _random;
   Timer? _hintTimer;
 
   List<String> _grid = <String>[];
   List<int> _selectedIndices = <int>[];
   List<String> _discoveredWords = <String>[];
+  final Set<String> _sessionWords = <String>{};
   String _currentWord = '';
   String _targetWord = '';
   String _currentHint = '';
@@ -165,7 +175,10 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _random = Random();
-    _wordDeck = WordDeck(wordBank[widget.level]!, random: _random);
+    _wordDecks = <GameLevel, WordDeck<WordEntry>>{
+      for (final level in widget.level.sourceLevels)
+        level: WordDeck(wordBank[level]!, random: _random),
+    };
     _musicEnabled = GameMusicService.instance.enabled;
     _generateRound();
     _startMusic();
@@ -210,8 +223,9 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
 
   void _generateRound() {
     _hintTimer?.cancel();
-    final nextEntry = _wordDeck.nextWord();
+    final nextEntry = _nextWordEntry();
     final nextWord = nextEntry.text;
+    _sessionWords.add(nextWord);
     final totalCells = widget.level.gridSize * widget.level.gridSize;
     final nextGrid = List<String>.filled(totalCells, '');
     final positions = List<int>.generate(totalCells, (index) => index)
@@ -237,6 +251,28 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       _wordStartedAt = DateTime.now();
     });
     _scheduleHintPrompt();
+  }
+
+  WordEntry _nextWordEntry() {
+    final sourceLevel = _sourceLevelForNextWord();
+    return _wordDecks[sourceLevel]!.nextWhere(
+      (entry) => !_sessionWords.contains(entry.text),
+    );
+  }
+
+  GameLevel _sourceLevelForNextWord() {
+    if (!widget.level.mixesAllLevels) {
+      return widget.level;
+    }
+
+    final progress = _score / _goalScore;
+    if (progress < 0.34) {
+      return GameLevel.easy;
+    }
+    if (progress < 0.67) {
+      return GameLevel.medium;
+    }
+    return GameLevel.hard;
   }
 
   void _scheduleHintPrompt() {
@@ -393,14 +429,23 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   }
 
   Future<RankingEntry?> _showInitialsDialog() async {
+    final elapsedSeconds = DateTime.now().difference(_gameStartedAt).inSeconds;
     final completedEntry = RankingEntry(
       initials: '',
       level: widget.level,
-      score: _score,
+      score: RankingStore.scoreForPerformance(
+        words: _discoveredWords.length,
+        elapsedSeconds: elapsedSeconds,
+      ),
       words: _discoveredWords.length,
-      elapsedSeconds: DateTime.now().difference(_gameStartedAt).inSeconds,
+      elapsedSeconds: elapsedSeconds,
       completedAt: DateTime.now(),
     );
+
+    final lastInitials = await RankingStore.instance.loadLastInitials();
+    if (!mounted) {
+      return null;
+    }
 
     final initials = await showDialog<String>(
       context: context,
@@ -408,6 +453,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       builder: (_) => _InitialsDialog(
         score: completedEntry.score,
         words: completedEntry.words,
+        initialInitials: lastInitials,
       ),
     );
 
@@ -905,10 +951,11 @@ class _RoundScenePanel extends StatelessWidget {
           child: Row(
             children: [
               Expanded(
-                flex: 10,
+                flex: compact ? 14 : 10,
                 child: LayoutBuilder(
                   builder: (context, constraints) {
                     final micro = constraints.maxHeight < 128;
+                    final metaFontSize = compact ? 10.0 : 11.0;
                     return Column(
                       mainAxisAlignment: micro
                           ? MainAxisAlignment.center
@@ -925,7 +972,7 @@ class _RoundScenePanel extends StatelessWidget {
                                 style: TextStyle(
                                   color: AppTheme.midnight,
                                   fontWeight: FontWeight.w900,
-                                  fontSize: compact ? 14 : 15,
+                                  fontSize: compact ? 13 : 15,
                                 ),
                               ),
                             ),
@@ -940,38 +987,61 @@ class _RoundScenePanel extends StatelessWidget {
                         SizedBox(height: micro ? 4 : 7),
                         AnimatedSwitcher(
                           duration: const Duration(milliseconds: 180),
-                          child: Text(
-                            isHitCelebrating
-                                ? typingText
-                                : '$currentText  •  $progressText',
+                          child: LayoutBuilder(
                             key: ValueKey<String>(
                               '$typingText-$score-$goalScore-$isHitCelebrating',
                             ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: isHitCelebrating
-                                  ? AppTheme.pressRed
-                                  : hasError
-                                  ? AppTheme.pressRed
-                                  : AppTheme.midnight,
-                              fontWeight: FontWeight.w900,
-                              fontSize: compact ? 15 : 17,
-                              letterSpacing: 0,
-                            ),
+                            builder: (context, constraints) {
+                              final wordText = Text(
+                                typingText,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: isHitCelebrating
+                                      ? AppTheme.pressRed
+                                      : hasError
+                                      ? AppTheme.pressRed
+                                      : AppTheme.midnight,
+                                  fontWeight: FontWeight.w900,
+                                  fontSize: compact ? 17 : 19,
+                                  letterSpacing: 0,
+                                ),
+                              );
+                              final scoreChip = _ScoreChip(
+                                progressText: progressText,
+                                compact: compact,
+                              );
+
+                              return Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  wordText,
+                                  SizedBox(height: compact ? 5 : 6),
+                                  scoreChip,
+                                ],
+                              );
+                            },
                           ),
                         ),
                         if (!micro) ...[
                           const SizedBox(height: 6),
-                          Text(
-                            '${level.wordSizeShortLabel} • tabuleiro ${level.tag}',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: AppTheme.ink.withValues(alpha: 0.7),
-                              fontWeight: FontWeight.w700,
-                              fontSize: compact ? 11 : 12,
-                            ),
+                          Wrap(
+                            spacing: 5,
+                            runSpacing: 5,
+                            children: [
+                              _TinyInfoChip(
+                                label: level.wordSizeShortLabel,
+                                fontSize: metaFontSize,
+                              ),
+                              _TinyInfoChip(
+                                label: level.tag,
+                                fontSize: metaFontSize,
+                              ),
+                              _TinyInfoChip(
+                                label: '$discoveredCount acertos',
+                                fontSize: metaFontSize,
+                              ),
+                            ],
                           ),
                           const SizedBox(height: 8),
                         ] else
@@ -986,16 +1056,10 @@ class _RoundScenePanel extends StatelessWidget {
                             dense: true,
                             onPressed: onRevealHint,
                           )
-                        else if (!micro)
-                          Text(
-                            '$discoveredCount acertos',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: AppTheme.ink.withValues(alpha: 0.62),
-                              fontWeight: FontWeight.w800,
-                              fontSize: compact ? 11 : 12,
-                            ),
+                        else if (micro)
+                          _TinyInfoChip(
+                            label: '$discoveredCount acertos',
+                            fontSize: metaFontSize,
                           ),
                       ],
                     );
@@ -1004,7 +1068,7 @@ class _RoundScenePanel extends StatelessWidget {
               ),
               SizedBox(width: compact ? 10 : 14),
               Expanded(
-                flex: 12,
+                flex: compact ? 9 : 12,
                 child: _ScenePreview(
                   level: level,
                   revealedFragments: revealedFragments,
@@ -1016,6 +1080,36 @@ class _RoundScenePanel extends StatelessWidget {
         ),
         _HitCelebrationBadge(visible: isHitCelebrating),
       ],
+    );
+  }
+}
+
+class _TinyInfoChip extends StatelessWidget {
+  const _TinyInfoChip({required this.label, required this.fontSize});
+
+  final String label;
+  final double fontSize;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+      decoration: BoxDecoration(
+        color: AppTheme.ink.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: AppTheme.rule.withValues(alpha: 0.55)),
+      ),
+      child: Text(
+        label,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          color: AppTheme.ink.withValues(alpha: 0.72),
+          fontSize: fontSize,
+          height: 1,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
     );
   }
 }
@@ -1078,6 +1172,42 @@ class _HitCelebrationBadge extends StatelessWidget {
   }
 }
 
+class _ScoreChip extends StatelessWidget {
+  const _ScoreChip({required this.progressText, required this.compact});
+
+  final String progressText;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      constraints: BoxConstraints(maxWidth: compact ? 74 : 84),
+      padding: EdgeInsets.symmetric(
+        horizontal: compact ? 7 : 8,
+        vertical: compact ? 5 : 6,
+      ),
+      decoration: BoxDecoration(
+        color: AppTheme.midnight.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppTheme.rule.withValues(alpha: 0.72)),
+      ),
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Text(
+          progressText,
+          maxLines: 1,
+          style: const TextStyle(
+            color: AppTheme.midnight,
+            fontWeight: FontWeight.w900,
+            fontSize: 12,
+            letterSpacing: 0,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _HintPanel extends StatelessWidget {
   const _HintPanel({
     required this.hint,
@@ -1126,8 +1256,6 @@ class _HintPanel extends StatelessWidget {
               Expanded(
                 child: Text(
                   'Dica: $hint',
-                  maxLines: dense ? 2 : 3,
-                  overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     color: AppTheme.midnight,
                     fontWeight: FontWeight.w800,

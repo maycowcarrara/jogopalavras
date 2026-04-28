@@ -22,6 +22,7 @@ void main() {
 
     expect(find.text('Escolha a editoria'), findsOneWidget);
     expect(find.text('Começar no fácil'), findsOneWidget);
+    expect(find.text('Abrir pauta livre'), findsOneWidget);
 
     await tester.tap(find.text('Começar no fácil'));
     await tester.pumpAndSettle();

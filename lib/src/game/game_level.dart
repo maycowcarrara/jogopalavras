@@ -1,67 +1,77 @@
 import 'package:flutter/material.dart';
 import 'package:jogopalavras/src/theme/app_theme.dart';
 
-enum GameLevel { easy, medium, hard }
+enum GameLevel { easy, medium, hard, pautaLivre }
 
 extension GameLevelDetails on GameLevel {
   String get title => switch (this) {
     GameLevel.easy => 'Fácil',
     GameLevel.medium => 'Médio',
     GameLevel.hard => 'Difícil',
+    GameLevel.pautaLivre => 'Pauta Livre',
   };
 
   String get subtitle => switch (this) {
     GameLevel.easy => 'Palavras curtas e bem familiares',
     GameLevel.medium => 'Mistura equilibrada para ganhar ritmo',
     GameLevel.hard => 'Desafio com palavras maiores e tabuleiro amplo',
+    GameLevel.pautaLivre => 'Uma rodada progressiva com todos os níveis',
   };
 
   String get tag => switch (this) {
     GameLevel.easy => '4x4',
     GameLevel.medium => '6x6',
     GameLevel.hard => '8x8',
+    GameLevel.pautaLivre => '8x8',
   };
 
   String get wordSizeShortLabel => switch (this) {
     GameLevel.easy => '4 letras',
     GameLevel.medium => '5-7 letras',
-    GameLevel.hard => '7-9 letras',
+    GameLevel.hard => '7-10 letras',
+    GameLevel.pautaLivre => '4-10 letras',
   };
 
   String get wordSizeLabel => switch (this) {
     GameLevel.easy => 'Palavras de 4 letras',
     GameLevel.medium => 'Palavras de 5 a 7 letras',
-    GameLevel.hard => 'Palavras de 7 a 9 letras',
+    GameLevel.hard => 'Palavras de 7 a 10 letras',
+    GameLevel.pautaLivre => 'Palavras de 4 a 10 letras',
   };
 
   int get gridSize => switch (this) {
     GameLevel.easy => 4,
     GameLevel.medium => 6,
     GameLevel.hard => 8,
+    GameLevel.pautaLivre => 8,
   };
 
   Color get accent => switch (this) {
     GameLevel.easy => AppTheme.mint,
     GameLevel.medium => AppTheme.electricBlue,
     GameLevel.hard => AppTheme.coral,
+    GameLevel.pautaLivre => AppTheme.pressGold,
   };
 
   IconData get icon => switch (this) {
     GameLevel.easy => Icons.article_outlined,
     GameLevel.medium => Icons.newspaper_rounded,
     GameLevel.hard => Icons.local_library_rounded,
+    GameLevel.pautaLivre => Icons.dynamic_feed_rounded,
   };
 
   String get sceneTitle => switch (this) {
     GameLevel.easy => 'Coluna leve',
     GameLevel.medium => 'Caderno principal',
     GameLevel.hard => 'Edição de domingo',
+    GameLevel.pautaLivre => 'Pauta Livre',
   };
 
   String get sceneSubtitle => switch (this) {
     GameLevel.easy => 'Cada acerto revela uma nova chamada.',
     GameLevel.medium => 'Monte palavras para fechar a manchete.',
     GameLevel.hard => 'Complete a página antes do fechamento.',
+    GameLevel.pautaLivre => 'A rodada começa leve e fecha em manchete forte.',
   };
 
   List<Color> get sceneGradient => switch (this) {
@@ -80,35 +90,58 @@ extension GameLevelDetails on GameLevel {
       Color(0xFFE4CAC4),
       Color(0xFF9E2F2F),
     ],
+    GameLevel.pautaLivre => const [
+      Color(0xFFFFFCF5),
+      Color(0xFFE5DDC8),
+      Color(0xFFC9A227),
+    ],
   };
 
   IconData get sceneIcon => switch (this) {
     GameLevel.easy => Icons.short_text_rounded,
     GameLevel.medium => Icons.view_column_rounded,
     GameLevel.hard => Icons.menu_book_rounded,
+    GameLevel.pautaLivre => Icons.auto_stories_rounded,
   };
 
   IconData get sceneAccentIcon => switch (this) {
     GameLevel.easy => Icons.format_quote_rounded,
     GameLevel.medium => Icons.title_rounded,
     GameLevel.hard => Icons.history_edu_rounded,
+    GameLevel.pautaLivre => Icons.bolt_rounded,
   };
 
   String get soundtrackLabel => switch (this) {
     GameLevel.easy => 'Leitura calma',
     GameLevel.medium => 'Ritmo de foco',
     GameLevel.hard => 'Noite editorial',
+    GameLevel.pautaLivre => 'Plantão editorial',
   };
 
   String get soundtrackAsset => switch (this) {
     GameLevel.easy => 'audio/easy_loop.mp3',
     GameLevel.medium => 'audio/medium_loop.mp3',
     GameLevel.hard => 'audio/hard_loop.mp3',
+    GameLevel.pautaLivre => 'audio/medium_loop.mp3',
   };
 
   double get soundtrackVolume => switch (this) {
     GameLevel.easy => 0.24,
     GameLevel.medium => 0.27,
     GameLevel.hard => 0.3,
+    GameLevel.pautaLivre => 0.27,
+  };
+
+  bool get mixesAllLevels => this == GameLevel.pautaLivre;
+
+  List<GameLevel> get sourceLevels => switch (this) {
+    GameLevel.easy => const [GameLevel.easy],
+    GameLevel.medium => const [GameLevel.medium],
+    GameLevel.hard => const [GameLevel.hard],
+    GameLevel.pautaLivre => const [
+      GameLevel.easy,
+      GameLevel.medium,
+      GameLevel.hard,
+    ],
   };
 }

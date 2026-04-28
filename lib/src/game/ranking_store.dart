@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:jogopalavras/src/game/game_level.dart';
 import 'package:http/http.dart' as http;
@@ -15,12 +16,18 @@ class RankingEntry {
   });
 
   factory RankingEntry.fromJson(Map<String, Object?> json) {
+    final words = json['words'] as int? ?? 0;
+    final elapsedSeconds = json['elapsedSeconds'] as int? ?? 0;
+
     return RankingEntry(
       initials: (json['initials'] as String? ?? '---').toUpperCase(),
       level: _levelFromName(json['level'] as String?),
-      score: json['score'] as int? ?? 0,
-      words: json['words'] as int? ?? 0,
-      elapsedSeconds: json['elapsedSeconds'] as int? ?? 0,
+      score: RankingStore.scoreForPerformance(
+        words: words,
+        elapsedSeconds: elapsedSeconds,
+      ),
+      words: words,
+      elapsedSeconds: elapsedSeconds,
       completedAt:
           DateTime.tryParse(json['completedAt'] as String? ?? '') ??
           DateTime.fromMillisecondsSinceEpoch(0),
@@ -63,6 +70,7 @@ class RankingStore {
   static const int maxEntries = 10;
   static const Duration _requestTimeout = Duration(seconds: 6);
   static const String _storageKey = 'ranking_entries_v1';
+  static const String _lastInitialsKey = 'ranking_last_initials_v1';
   static const String _apiBaseUrl = String.fromEnvironment('RANKING_API_URL');
 
   Future<List<RankingEntry>> loadEntries({GameLevel? level}) async {
@@ -77,6 +85,8 @@ class RankingStore {
   }
 
   Future<List<RankingEntry>> saveEntry(RankingEntry entry) async {
+    await saveLastInitials(entry.initials);
+
     if (_apiBaseUrl.isNotEmpty) {
       final remoteEntries = await _saveRemoteEntry(entry);
       if (remoteEntries != null) {
@@ -85,6 +95,34 @@ class RankingStore {
     }
 
     return _saveLocalEntry(entry);
+  }
+
+  Future<String> loadLastInitials() async {
+    final preferences = await SharedPreferences.getInstance();
+    final storedInitials = _sanitizeInitials(
+      preferences.getString(_lastInitialsKey),
+    );
+    if (storedInitials != null) {
+      return storedInitials;
+    }
+
+    final entries = await _loadLocalEntries();
+    if (entries.isEmpty) {
+      return '';
+    }
+
+    entries.sort((a, b) => b.completedAt.compareTo(a.completedAt));
+    return _sanitizeInitials(entries.first.initials) ?? '';
+  }
+
+  Future<void> saveLastInitials(String initials) async {
+    final sanitizedInitials = _sanitizeInitials(initials);
+    if (sanitizedInitials == null) {
+      return;
+    }
+
+    final preferences = await SharedPreferences.getInstance();
+    await preferences.setString(_lastInitialsKey, sanitizedInitials);
   }
 
   Future<List<RankingEntry>> _loadLocalEntries({GameLevel? level}) async {
@@ -148,9 +186,7 @@ class RankingStore {
       final response = await http
           .post(
             _rankingUri(),
-            headers: const <String, String>{
-              'content-type': 'application/json',
-            },
+            headers: const <String, String>{'content-type': 'application/json'},
             body: jsonEncode(entry.toJson()),
           )
           .timeout(_requestTimeout);
@@ -172,9 +208,7 @@ class RankingStore {
 
     return baseUri.replace(
       path: path,
-      queryParameters: <String, String>{
-        if (level != null) 'level': level.name,
-      },
+      queryParameters: <String, String>{if (level != null) 'level': level.name},
     );
   }
 
@@ -206,6 +240,13 @@ class RankingStore {
     return _bestEntriesForLevel([...entries]);
   }
 
+  static int scoreForPerformance({
+    required int words,
+    required int elapsedSeconds,
+  }) {
+    return max(0, 1000 - (words * 30) - elapsedSeconds);
+  }
+
   static List<RankingEntry> _bestEntriesForLevel(List<RankingEntry> entries) {
     _sortEntries(entries);
     return entries.take(maxEntries).toList();
@@ -213,7 +254,16 @@ class RankingStore {
 
   static void _sortEntries(List<RankingEntry> entries) {
     entries.sort((a, b) {
-      final scoreComparison = b.score.compareTo(a.score);
+      final scoreComparison =
+          scoreForPerformance(
+            words: b.words,
+            elapsedSeconds: b.elapsedSeconds,
+          ).compareTo(
+            scoreForPerformance(
+              words: a.words,
+              elapsedSeconds: a.elapsedSeconds,
+            ),
+          );
       if (scoreComparison != 0) {
         return scoreComparison;
       }
@@ -230,5 +280,10 @@ class RankingStore {
 
       return a.completedAt.compareTo(b.completedAt);
     });
+  }
+
+  static String? _sanitizeInitials(String? initials) {
+    final normalized = initials?.trim().toUpperCase() ?? '';
+    return RegExp(r'^[A-Z]{3}$').hasMatch(normalized) ? normalized : null;
   }
 }

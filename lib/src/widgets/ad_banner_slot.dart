@@ -10,11 +10,13 @@ class AdBannerSlot extends StatefulWidget {
     this.compact = false,
     this.margin = EdgeInsets.zero,
     this.safeAreaMinimum,
+    this.adSize = AdSize.banner,
   });
 
   final bool compact;
   final EdgeInsetsGeometry margin;
   final EdgeInsets? safeAreaMinimum;
+  final AdSize adSize;
 
   @override
   State<AdBannerSlot> createState() => _AdBannerSlotState();
@@ -43,7 +45,7 @@ class _AdBannerSlotState extends State<AdBannerSlot> {
 
     final ad = BannerAd(
       adUnitId: AdConfig.resolvedBannerId,
-      size: AdSize.banner,
+      size: widget.adSize,
       request: const AdRequest(),
       listener: BannerAdListener(
         onAdLoaded: (ad) {
@@ -80,7 +82,9 @@ class _AdBannerSlotState extends State<AdBannerSlot> {
       return const SizedBox.shrink();
     }
 
-    final height = widget.compact ? 58.0 : 66.0;
+    final minimumHeight = widget.compact ? 58.0 : 66.0;
+    final adHeight = widget.adSize.height.toDouble() + 8;
+    final height = adHeight > minimumHeight ? adHeight : minimumHeight;
 
     final slot = Padding(
       padding: widget.margin,

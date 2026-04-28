@@ -10,6 +10,8 @@ class WordDeck<T> {
   final List<T> _remainingEntries = [];
   T? _lastEntry;
 
+  int get length => _sourceEntries.length;
+
   T nextWord() {
     if (_sourceEntries.isEmpty) {
       throw StateError('O banco de palavras não pode estar vazio.');
@@ -33,5 +35,16 @@ class WordDeck<T> {
     final next = _remainingEntries.removeAt(0);
     _lastEntry = next;
     return next;
+  }
+
+  T nextWhere(bool Function(T entry) test) {
+    for (var attempt = 0; attempt < _sourceEntries.length; attempt++) {
+      final next = nextWord();
+      if (test(next)) {
+        return next;
+      }
+    }
+
+    return nextWord();
   }
 }
