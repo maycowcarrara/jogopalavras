@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:jogopalavras/src/core/audio/game_music_service.dart';
 import 'package:jogopalavras/src/core/errors/app_error_reporter.dart';
 import 'package:jogopalavras/src/game/intro_preferences.dart';
 import 'package:jogopalavras/src/screens/intro_screen.dart';
@@ -13,8 +14,38 @@ class WordMazeApp extends StatefulWidget {
   State<WordMazeApp> createState() => _WordMazeAppState();
 }
 
-class _WordMazeAppState extends State<WordMazeApp> {
+class _WordMazeAppState extends State<WordMazeApp> with WidgetsBindingObserver {
   late final Future<bool> _hasSeenIntro = IntroPreferences.hasSeenIntro();
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _startAppMusic();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _startAppMusic();
+      return;
+    }
+
+    GameMusicService.instance.pause();
+  }
+
+  Future<void> _startAppMusic() async {
+    await GameMusicService.instance.playAppMusic();
+    if (!mounted) {
+      return;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {

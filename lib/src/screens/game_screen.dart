@@ -164,9 +164,9 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   bool _hasError = false;
   bool _hintSuggested = false;
   bool _hintRevealed = false;
-  bool _musicEnabled = true;
   bool _isHitCelebrating = false;
   bool _isPaused = false;
+  bool _pausedByLifecycle = false;
   String _typedHitWord = '';
   Offset? _dragPosition;
 
@@ -179,7 +179,6 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       for (final level in widget.level.sourceLevels)
         level: WordDeck(wordBank[level]!, random: _random),
     };
-    _musicEnabled = GameMusicService.instance.enabled;
     _generateRound();
     _startScoreTimer();
     _startMusic();
@@ -190,7 +189,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     _hintTimer?.cancel();
     _scoreTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
-    GameMusicService.instance.stop();
+    GameMusicService.instance.clearGamePause();
     super.dispose();
   }
 
@@ -218,42 +217,41 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     );
   }
 
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
-      if (!_isPaused) {
-        _resumeMusic();
-      }
-      return;
-    }
-
-    GameMusicService.instance.pause();
-  }
-
   Future<void> _startMusic() async {
     await GameMusicService.instance.playForLevel(widget.level);
   }
 
-  Future<void> _resumeMusic() async {
-    await GameMusicService.instance.resume(widget.level);
+  Future<void> _togglePause() async {
+    _pausedByLifecycle = false;
+    await _setPaused(!_isPaused);
   }
 
-  Future<void> _toggleMusic() async {
-    final nextValue = !_musicEnabled;
-    setState(() {
-      _musicEnabled = nextValue;
-    });
-    await GameMusicService.instance.setEnabled(
-      nextValue,
-      fallbackLevel: widget.level,
-    );
-    if (_isPaused) {
-      await GameMusicService.instance.pause();
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      if (_pausedByLifecycle) {
+        _pausedByLifecycle = false;
+        unawaited(_setPaused(false));
+      } else if (_isPaused) {
+        unawaited(GameMusicService.instance.pause());
+      }
+      return;
+    }
+
+    if (!_isPaused) {
+      _pausedByLifecycle = true;
+      unawaited(_setPaused(true));
     }
   }
 
-  Future<void> _togglePause() async {
-    final nextValue = !_isPaused;
+  Future<void> _setPaused(bool nextValue) async {
+    if (_isPaused == nextValue) {
+      if (nextValue) {
+        await GameMusicService.instance.pause();
+      }
+      return;
+    }
+
     setState(() {
       _isPaused = nextValue;
       _dragPosition = null;
@@ -265,11 +263,13 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     });
 
     if (nextValue) {
-      await GameMusicService.instance.pause();
+      _hintTimer?.cancel();
+      await GameMusicService.instance.pause(holdForGame: true);
       return;
     }
 
-    await _resumeMusic();
+    _scheduleHintPrompt();
+    await GameMusicService.instance.resume(widget.level);
   }
 
   void _generateRound() {
@@ -320,8 +320,13 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   }
 
   void _scheduleHintPrompt() {
+    _hintTimer?.cancel();
+    if (_isPaused || _hintSuggested || _hintRevealed || _currentHint.isEmpty) {
+      return;
+    }
+
     _hintTimer = Timer(_hintDelay, () {
-      if (!mounted || _hintRevealed) {
+      if (!mounted || _isPaused || _hintRevealed) {
         return;
       }
 
@@ -729,8 +734,6 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                                         discoveredCount:
                                             _discoveredWords.length,
                                         compact: layout.compact,
-                                        musicEnabled: _musicEnabled,
-                                        onToggleMusic: _toggleMusic,
                                         onRevealHint: _revealHint,
                                         revealedFragments: revealedFragments,
                                         totalFragments: _progressFragments,
@@ -947,8 +950,6 @@ class _RoundScenePanel extends StatelessWidget {
     required this.targetWordCount,
     required this.discoveredCount,
     required this.compact,
-    required this.musicEnabled,
-    required this.onToggleMusic,
     required this.onRevealHint,
     required this.revealedFragments,
     required this.totalFragments,
@@ -968,8 +969,6 @@ class _RoundScenePanel extends StatelessWidget {
   final int targetWordCount;
   final int discoveredCount;
   final bool compact;
-  final bool musicEnabled;
-  final VoidCallback onToggleMusic;
   final VoidCallback onRevealHint;
   final int revealedFragments;
   final int totalFragments;
@@ -1040,12 +1039,6 @@ class _RoundScenePanel extends StatelessWidget {
                                   fontSize: compact ? 13 : 15,
                                 ),
                               ),
-                            ),
-                            const SizedBox(width: 6),
-                            _MusicToggleButton(
-                              enabled: musicEnabled,
-                              onPressed: onToggleMusic,
-                              size: compact ? 32 : 34,
                             ),
                           ],
                         ),
@@ -2476,41 +2469,6 @@ class _HeaderScorePill extends StatelessWidget {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _MusicToggleButton extends StatelessWidget {
-  const _MusicToggleButton({
-    required this.enabled,
-    required this.onPressed,
-    this.size = 42,
-  });
-
-  final bool enabled;
-  final VoidCallback onPressed;
-  final double size;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: enabled
-          ? AppTheme.pressBlue.withValues(alpha: 0.12)
-          : AppTheme.midnight.withValues(alpha: 0.06),
-      borderRadius: BorderRadius.circular(8),
-      child: InkWell(
-        onTap: onPressed,
-        borderRadius: BorderRadius.circular(8),
-        child: SizedBox(
-          width: size,
-          height: size,
-          child: Icon(
-            enabled ? Icons.music_note_rounded : Icons.music_off_rounded,
-            color: enabled ? AppTheme.pressBlue : AppTheme.ink,
-            size: size * 0.48,
-          ),
-        ),
       ),
     );
   }

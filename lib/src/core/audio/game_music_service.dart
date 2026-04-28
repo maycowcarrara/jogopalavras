@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/foundation.dart';
 import 'package:jogopalavras/src/game/game_level.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class GameMusicService {
   GameMusicService._();
@@ -16,10 +17,17 @@ class GameMusicService {
 
   bool _initialized = false;
   bool _enabled = true;
+  bool _effectsEnabled = true;
+  bool _musicPlaying = false;
+  bool _pausedByGame = false;
+  double _volume = 1;
   String? _currentAsset;
   GameLevel? _currentLevel;
   int _playlistIndex = -1;
 
+  static const String _musicEnabledKey = 'music_enabled_v1';
+  static const String _effectsEnabledKey = 'effects_enabled_v1';
+  static const String _musicVolumeKey = 'music_volume_v1';
   static const List<String> _playlistAssets = [
     'audio/alisiabeats-titanium-170190.mp3',
     'audio/bodleasons-lofi-chill-smooth-chill-lofi-for-vlogs-and-background-music-159456.mp3',
@@ -34,19 +42,53 @@ class GameMusicService {
   static const String _endOfGameAsset = 'audio/endofgame.mp3';
 
   bool get enabled => _enabled;
+  bool get effectsEnabled => _effectsEnabled;
+  double get volume => _volume;
+
+  Future<void> playAppMusic() async {
+    await initialize();
+
+    if (!_enabled || _pausedByGame || kIsWeb || _musicPlaying) {
+      return;
+    }
+
+    try {
+      await _applyMusicVolume();
+      await _playAsset(_currentAsset ?? _nextPlaylistAsset());
+    } catch (_) {
+      // Ignore audio platform issues during tests or unsupported runtimes.
+    }
+  }
 
   Future<void> initialize() async {
+    try {
+      final preferences = await SharedPreferences.getInstance();
+      _enabled = preferences.getBool(_musicEnabledKey) ?? true;
+      _effectsEnabled = preferences.getBool(_effectsEnabledKey) ?? true;
+      _volume = (preferences.getDouble(_musicVolumeKey) ?? 1)
+          .clamp(0.0, 1.0)
+          .toDouble();
+    } catch (_) {
+      // Ignore preferences issues during tests or unsupported runtimes.
+    }
+
     if (_initialized || kIsWeb) {
       _initialized = true;
       return;
     }
 
     try {
+      final mixContext = AudioContextConfig(
+        focus: AudioContextConfigFocus.mixWithOthers,
+      ).build();
       await _player.setReleaseMode(ReleaseMode.release);
+      await _player.setAudioContext(mixContext);
       await _wordVictoryPlayer.setReleaseMode(ReleaseMode.stop);
       await _wordVictoryPlayer.setPlayerMode(PlayerMode.lowLatency);
+      await _wordVictoryPlayer.setAudioContext(mixContext);
       await _wordVictoryPlayer.setVolume(0.75);
       await _endOfGamePlayer.setReleaseMode(ReleaseMode.stop);
+      await _endOfGamePlayer.setAudioContext(mixContext);
       await _endOfGamePlayer.setVolume(0.9);
       _playerCompleteSubscription = _player.onPlayerComplete.listen((_) {
         unawaited(_playNextTrack());
@@ -63,13 +105,14 @@ class GameMusicService {
     final asset = level.soundtrackAsset;
     _currentAsset = asset;
     _currentLevel = level;
+    _pausedByGame = false;
 
     if (!_enabled || kIsWeb) {
       return;
     }
 
     try {
-      await _player.setVolume(level.soundtrackVolume);
+      await _applyMusicVolume();
       await _playAsset(asset);
     } catch (_) {
       // Ignore audio platform issues during tests or unsupported runtimes.
@@ -77,7 +120,15 @@ class GameMusicService {
   }
 
   Future<void> setEnabled(bool value, {GameLevel? fallbackLevel}) async {
+    await initialize();
     _enabled = value;
+
+    try {
+      final preferences = await SharedPreferences.getInstance();
+      await preferences.setBool(_musicEnabledKey, value);
+    } catch (_) {
+      // Ignore preferences issues during tests or unsupported runtimes.
+    }
 
     if (kIsWeb) {
       return;
@@ -86,9 +137,15 @@ class GameMusicService {
     if (!_enabled) {
       try {
         await _player.stop();
+        _musicPlaying = false;
+        _pausedByGame = false;
       } catch (_) {
         // Ignore audio platform issues during tests or unsupported runtimes.
       }
+      return;
+    }
+
+    if (_pausedByGame) {
       return;
     }
 
@@ -100,28 +157,77 @@ class GameMusicService {
     if (_currentAsset != null) {
       try {
         if (_currentLevel != null) {
-          await _player.setVolume(_currentLevel!.soundtrackVolume);
+          await _applyMusicVolume();
         }
         await _playAsset(_currentAsset!);
       } catch (_) {
         // Ignore audio platform issues during tests or unsupported runtimes.
       }
+      return;
+    }
+
+    await playAppMusic();
+  }
+
+  Future<void> setVolume(double value) async {
+    await initialize();
+    _volume = value.clamp(0.0, 1.0).toDouble();
+
+    try {
+      final preferences = await SharedPreferences.getInstance();
+      await preferences.setDouble(_musicVolumeKey, _volume);
+    } catch (_) {
+      // Ignore preferences issues during tests or unsupported runtimes.
+    }
+
+    if (kIsWeb) {
+      return;
+    }
+
+    await _applyMusicVolume();
+  }
+
+  Future<void> setEffectsEnabled(bool value) async {
+    await initialize();
+    _effectsEnabled = value;
+
+    try {
+      final preferences = await SharedPreferences.getInstance();
+      await preferences.setBool(_effectsEnabledKey, value);
+    } catch (_) {
+      // Ignore preferences issues during tests or unsupported runtimes.
+    }
+
+    if (value || kIsWeb) {
+      return;
+    }
+
+    try {
+      await _wordVictoryPlayer.stop();
+      await _endOfGamePlayer.stop();
+    } catch (_) {
+      // Ignore audio platform issues during tests or unsupported runtimes.
     }
   }
 
-  Future<void> pause() async {
+  Future<void> pause({bool holdForGame = false}) async {
+    _pausedByGame = _pausedByGame || holdForGame;
+
     if (kIsWeb || !_enabled) {
       return;
     }
 
     try {
       await _player.pause();
+      _musicPlaying = false;
     } catch (_) {
       // Ignore audio platform issues during tests or unsupported runtimes.
     }
   }
 
   Future<void> resume(GameLevel level) async {
+    _pausedByGame = false;
+
     if (!_enabled) {
       return;
     }
@@ -133,6 +239,7 @@ class GameMusicService {
 
       try {
         await _player.resume();
+        _musicPlaying = true;
       } catch (_) {
         await playForLevel(level);
       }
@@ -143,7 +250,9 @@ class GameMusicService {
   }
 
   Future<void> stop() async {
-    if (kIsWeb) {
+    _pausedByGame = false;
+
+    if (!_effectsEnabled || kIsWeb) {
       return;
     }
 
@@ -151,6 +260,7 @@ class GameMusicService {
       await _player.stop();
       await _wordVictoryPlayer.stop();
       await _endOfGamePlayer.stop();
+      _musicPlaying = false;
     } catch (_) {
       // Ignore audio platform issues during tests or unsupported runtimes.
     }
@@ -158,6 +268,10 @@ class GameMusicService {
 
   Future<void> playWordVictory() async {
     await _playEffect(_wordVictoryPlayer, _wordVictoryAsset);
+  }
+
+  void clearGamePause() {
+    _pausedByGame = false;
   }
 
   Future<void> playEndOfGame() async {
@@ -180,12 +294,12 @@ class GameMusicService {
   }
 
   Future<void> _playNextTrack() async {
-    if (!_enabled || kIsWeb || _currentLevel == null) {
+    if (!_enabled || kIsWeb) {
       return;
     }
 
     try {
-      await _player.setVolume(_currentLevel!.soundtrackVolume);
+      await _applyMusicVolume();
       await _playAsset(_nextPlaylistAsset());
     } catch (_) {
       // Ignore audio platform issues during tests or unsupported runtimes.
@@ -196,12 +310,19 @@ class GameMusicService {
     _currentAsset = asset;
     _playlistIndex = _playlistAssets.indexOf(asset);
     await _player.play(AssetSource(asset));
+    _musicPlaying = true;
+  }
+
+  Future<void> _applyMusicVolume() async {
+    await _player.setVolume(
+      (_currentLevel?.soundtrackVolume ?? 0.34) * _volume,
+    );
   }
 
   Future<void> _playEffect(AudioPlayer player, String asset) async {
     await initialize();
 
-    if (!_enabled || kIsWeb) {
+    if (kIsWeb) {
       return;
     }
 
