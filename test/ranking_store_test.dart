@@ -74,6 +74,36 @@ void main() {
     );
   });
 
+  test('recalcula pontuacao com penalidade de pulos', () {
+    final scoreWithoutSkip = RankingStore.scoreForPerformance(
+      words: 10,
+      elapsedSeconds: 60,
+      hintsUsed: 1,
+    );
+    final scoreWithSkip = RankingStore.scoreForPerformance(
+      words: 10,
+      elapsedSeconds: 60,
+      hintsUsed: 1,
+      skipsUsed: 1,
+    );
+
+    expect(scoreWithSkip, scoreWithoutSkip - RankingStore.pointsPerSkip);
+
+    final entry = RankingEntry.fromJson(<String, Object?>{
+      'initials': 'MRC',
+      'level': 'easy',
+      'score': 1000,
+      'words': 10,
+      'elapsedSeconds': 60,
+      'hintsUsed': 1,
+      'skipsUsed': 1,
+      'completedAt': DateTime(2026, 4, 28).toIso8601String(),
+    });
+
+    expect(entry.skipsUsed, 1);
+    expect(entry.score, scoreWithSkip);
+  });
+
   test('lembra as ultimas iniciais usadas no ranking', () async {
     SharedPreferences.setMockInitialValues(<String, Object>{});
 

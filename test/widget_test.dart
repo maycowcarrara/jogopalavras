@@ -48,4 +48,20 @@ void main() {
     expect(find.text('Caderno principal'), findsOneWidget);
     expect(find.text('0/8 palavras'), findsOneWidget);
   });
+
+  testWidgets('controle de audio abre painel discreto', (tester) async {
+    SharedPreferences.setMockInitialValues({'intro_seen_v1': true});
+    await tester.pumpWidget(const WordMazeApp());
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('app_audio_control_button')),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 160));
+
+    expect(find.text('Música'), findsOneWidget);
+    expect(find.text('Efeitos'), findsOneWidget);
+    expect(find.byType(Slider), findsOneWidget);
+  });
 }

@@ -15,6 +15,7 @@ class RankingEntry {
     required this.completedAt,
     this.errors = 0,
     this.hintsUsed = 0,
+    this.skipsUsed = 0,
   });
 
   factory RankingEntry.fromJson(Map<String, Object?> json) {
@@ -22,6 +23,7 @@ class RankingEntry {
     final elapsedSeconds = json['elapsedSeconds'] as int? ?? 0;
     final errors = json['errors'] as int? ?? 0;
     final hintsUsed = json['hintsUsed'] as int? ?? 0;
+    final skipsUsed = json['skipsUsed'] as int? ?? 0;
 
     return RankingEntry(
       initials: (json['initials'] as String? ?? '---').toUpperCase(),
@@ -31,6 +33,7 @@ class RankingEntry {
         elapsedSeconds: elapsedSeconds,
         errors: errors,
         hintsUsed: hintsUsed,
+        skipsUsed: skipsUsed,
       ),
       words: words,
       elapsedSeconds: elapsedSeconds,
@@ -39,6 +42,7 @@ class RankingEntry {
           DateTime.fromMillisecondsSinceEpoch(0),
       errors: errors,
       hintsUsed: hintsUsed,
+      skipsUsed: skipsUsed,
     );
   }
 
@@ -50,6 +54,7 @@ class RankingEntry {
   final DateTime completedAt;
   final int errors;
   final int hintsUsed;
+  final int skipsUsed;
 
   Map<String, Object?> toJson() {
     return <String, Object?>{
@@ -61,6 +66,7 @@ class RankingEntry {
       'completedAt': completedAt.toIso8601String(),
       'errors': errors,
       'hintsUsed': hintsUsed,
+      'skipsUsed': skipsUsed,
     };
   }
 }
@@ -89,6 +95,7 @@ class RankingStore {
   static const int pointsPerSecond = 1;
   static const int pointsPerError = 50;
   static const int pointsPerHint = 80;
+  static const int pointsPerSkip = 160;
 
   Future<List<RankingEntry>> loadEntries({GameLevel? level}) async {
     if (_apiBaseUrl.isNotEmpty) {
@@ -262,6 +269,7 @@ class RankingStore {
     required int elapsedSeconds,
     int errors = 0,
     int hintsUsed = 0,
+    int skipsUsed = 0,
   }) {
     return max(
       0,
@@ -269,7 +277,8 @@ class RankingStore {
           (words * pointsPerWord) -
           (elapsedSeconds * pointsPerSecond) -
           (errors * pointsPerError) -
-          (hintsUsed * pointsPerHint),
+          (hintsUsed * pointsPerHint) -
+          (skipsUsed * pointsPerSkip),
     );
   }
 
@@ -286,12 +295,14 @@ class RankingStore {
             elapsedSeconds: b.elapsedSeconds,
             errors: b.errors,
             hintsUsed: b.hintsUsed,
+            skipsUsed: b.skipsUsed,
           ).compareTo(
             scoreForPerformance(
               words: a.words,
               elapsedSeconds: a.elapsedSeconds,
               errors: a.errors,
               hintsUsed: a.hintsUsed,
+              skipsUsed: a.skipsUsed,
             ),
           );
       if (scoreComparison != 0) {

@@ -40,6 +40,7 @@ class GameMusicService {
   ];
   static const String _wordVictoryAsset = 'audio/word_victory.mp3';
   static const String _endOfGameAsset = 'audio/endofgame.mp3';
+  static const double _musicOutputGain = 1.9;
 
   bool get enabled => _enabled;
   bool get effectsEnabled => _effectsEnabled;
@@ -314,8 +315,9 @@ class GameMusicService {
   }
 
   Future<void> _applyMusicVolume() async {
+    final levelVolume = _currentLevel?.soundtrackVolume ?? 0.42;
     await _player.setVolume(
-      (_currentLevel?.soundtrackVolume ?? 0.34) * _volume,
+      (levelVolume * _musicOutputGain * _volume).clamp(0.0, 1.0),
     );
   }
 

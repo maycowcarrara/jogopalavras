@@ -2,23 +2,75 @@ import 'package:flutter/material.dart';
 import 'package:jogopalavras/src/core/audio/game_music_service.dart';
 import 'package:jogopalavras/src/theme/app_theme.dart';
 
-class AppBackdrop extends StatefulWidget {
+class AppBackdrop extends StatelessWidget {
   const AppBackdrop({
     super.key,
     required this.child,
     this.primary = AppTheme.pressBlue,
     this.secondary = AppTheme.pressRed,
+    this.showAudioControl = true,
   });
 
   final Widget child;
   final Color primary;
   final Color secondary;
+  final bool showAudioControl;
 
   @override
-  State<AppBackdrop> createState() => _AppBackdropState();
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(color: AppTheme.cream),
+      child: Stack(
+        children: [
+          Positioned.fill(
+            child: CustomPaint(
+              painter: _NewsprintPainter(
+                primary: primary,
+                secondary: secondary,
+              ),
+            ),
+          ),
+          DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Colors.white.withValues(alpha: 0.62),
+                  AppTheme.cream.withValues(alpha: 0.8),
+                  AppTheme.newsprint.withValues(alpha: 0.62),
+                ],
+              ),
+            ),
+            child: const SizedBox.expand(),
+          ),
+          child,
+          if (showAudioControl)
+            SafeArea(
+              child: Align(
+                alignment: Alignment.topRight,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 14, 14, 0),
+                  child: AppAudioControl(),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
 }
 
-class _AppBackdropState extends State<AppBackdrop> {
+class AppAudioControl extends StatefulWidget {
+  const AppAudioControl({super.key, this.dark = false});
+
+  final bool dark;
+
+  @override
+  State<AppAudioControl> createState() => _AppAudioControlState();
+}
+
+class _AppAudioControlState extends State<AppAudioControl> {
   bool _musicEnabled = GameMusicService.instance.enabled;
   bool _effectsEnabled = GameMusicService.instance.effectsEnabled;
   double _musicVolume = GameMusicService.instance.volume;
@@ -47,14 +99,7 @@ class _AppBackdropState extends State<AppBackdrop> {
       _musicEnabled = nextValue;
     });
     await GameMusicService.instance.setEnabled(nextValue);
-    if (!mounted) {
-      return;
-    }
-    setState(() {
-      _musicEnabled = GameMusicService.instance.enabled;
-      _effectsEnabled = GameMusicService.instance.effectsEnabled;
-      _musicVolume = GameMusicService.instance.volume;
-    });
+    await _syncMusicState();
   }
 
   Future<void> _toggleEffects() async {
@@ -63,12 +108,7 @@ class _AppBackdropState extends State<AppBackdrop> {
       _effectsEnabled = nextValue;
     });
     await GameMusicService.instance.setEffectsEnabled(nextValue);
-    if (!mounted) {
-      return;
-    }
-    setState(() {
-      _effectsEnabled = GameMusicService.instance.effectsEnabled;
-    });
+    await _syncMusicState();
   }
 
   Future<void> _setVolume(double value) async {
@@ -83,70 +123,167 @@ class _AppBackdropState extends State<AppBackdrop> {
       await GameMusicService.instance.setEnabled(true);
     }
     await GameMusicService.instance.setVolume(value);
-
-    if (!mounted) {
-      return;
-    }
-    setState(() {
-      _musicEnabled = GameMusicService.instance.enabled;
-      _effectsEnabled = GameMusicService.instance.effectsEnabled;
-      _musicVolume = GameMusicService.instance.volume;
-    });
+    await _syncMusicState();
   }
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: const BoxDecoration(color: AppTheme.cream),
-      child: Stack(
-        children: [
-          Positioned.fill(
-            child: CustomPaint(
-              painter: _NewsprintPainter(
-                primary: widget.primary,
-                secondary: widget.secondary,
-              ),
-            ),
-          ),
-          DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  Colors.white.withValues(alpha: 0.62),
-                  AppTheme.cream.withValues(alpha: 0.8),
-                  AppTheme.newsprint.withValues(alpha: 0.62),
-                ],
-              ),
-            ),
-            child: const SizedBox.expand(),
-          ),
-          widget.child,
-          SafeArea(
-            child: Align(
-              alignment: Alignment.topRight,
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(14, 14, 14, 0),
-                child: _BackdropMusicControl(
-                  enabled: _musicEnabled,
-                  effectsEnabled: _effectsEnabled,
-                  volume: _musicVolume,
-                  onToggleMusic: _toggleMusic,
-                  onToggleEffects: _toggleEffects,
-                  onVolumeChanged: _setVolume,
+    return AppAudioControlButton(
+      enabled: _musicEnabled,
+      effectsEnabled: _effectsEnabled,
+      volume: _musicVolume,
+      dark: widget.dark,
+      onSync: _syncMusicState,
+      onToggleMusic: _toggleMusic,
+      onToggleEffects: _toggleEffects,
+      onVolumeChanged: _setVolume,
+    );
+  }
+}
+
+class AppAudioControlButton extends StatelessWidget {
+  const AppAudioControlButton({
+    super.key,
+    required this.enabled,
+    required this.effectsEnabled,
+    required this.volume,
+    required this.onToggleMusic,
+    required this.onToggleEffects,
+    required this.onVolumeChanged,
+    this.onSync,
+    this.dark = false,
+  });
+
+  final bool enabled;
+  final bool effectsEnabled;
+  final double volume;
+  final VoidCallback onToggleMusic;
+  final VoidCallback onToggleEffects;
+  final ValueChanged<double> onVolumeChanged;
+  final Future<void> Function()? onSync;
+  final bool dark;
+
+  IconData get _icon {
+    if (!enabled) {
+      return Icons.volume_off_rounded;
+    }
+
+    return volume > 0.55 ? Icons.volume_up_rounded : Icons.volume_down_rounded;
+  }
+
+  Future<void> _showPanel(BuildContext context) async {
+    final buttonBox = context.findRenderObject() as RenderBox?;
+    final overlayBox =
+        Overlay.of(context).context.findRenderObject() as RenderBox?;
+    final buttonOffset =
+        buttonBox?.localToGlobal(Offset.zero, ancestor: overlayBox) ??
+        Offset.zero;
+    final buttonSize = buttonBox?.size ?? const Size(42, 42);
+
+    onSync?.call();
+
+    await showGeneralDialog<void>(
+      context: context,
+      barrierColor: Colors.transparent,
+      barrierDismissible: true,
+      barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
+      pageBuilder: (dialogContext, animation, secondaryAnimation) {
+        var panelMusicEnabled = enabled;
+        var panelEffectsEnabled = effectsEnabled;
+        var panelVolume = volume;
+
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            final screenWidth = MediaQuery.sizeOf(context).width;
+            final right = (screenWidth - buttonOffset.dx - buttonSize.width)
+                .clamp(8.0, screenWidth);
+
+            return Stack(
+              children: [
+                Positioned(
+                  top: buttonOffset.dy + buttonSize.height + 8,
+                  right: right,
+                  child: Material(
+                    color: Colors.transparent,
+                    child: _AudioControlPanel(
+                      enabled: panelMusicEnabled,
+                      effectsEnabled: panelEffectsEnabled,
+                      volume: panelVolume,
+                      onToggleMusic: () {
+                        final nextValue = !panelMusicEnabled;
+                        setDialogState(() {
+                          panelMusicEnabled = nextValue;
+                        });
+                        onToggleMusic();
+                      },
+                      onToggleEffects: () {
+                        final nextValue = !panelEffectsEnabled;
+                        setDialogState(() {
+                          panelEffectsEnabled = nextValue;
+                        });
+                        onToggleEffects();
+                      },
+                      onVolumeChanged: (value) {
+                        setDialogState(() {
+                          panelVolume = value;
+                          if (value > 0) {
+                            panelMusicEnabled = true;
+                          }
+                        });
+                        onVolumeChanged(value);
+                      },
+                    ),
+                  ),
                 ),
-              ),
+              ],
+            );
+          },
+        );
+      },
+      transitionBuilder: (context, animation, secondaryAnimation, child) {
+        return FadeTransition(
+          opacity: CurvedAnimation(parent: animation, curve: Curves.easeOut),
+          child: child,
+        );
+      },
+      transitionDuration: const Duration(milliseconds: 120),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final foreground = dark ? Colors.white : AppTheme.pressBlue;
+    final background = dark
+        ? Colors.white.withValues(alpha: 0.14)
+        : Colors.white.withValues(alpha: 0.96);
+
+    return Semantics(
+      button: true,
+      label: 'Controle de audio',
+      child: Tooltip(
+        message: 'Áudio',
+        child: Material(
+          color: background,
+          borderRadius: BorderRadius.circular(8),
+          elevation: dark ? 0 : 10,
+          shadowColor: AppTheme.midnight.withValues(alpha: 0.28),
+          child: InkWell(
+            key: const ValueKey<String>('app_audio_control_button'),
+            onTap: () => _showPanel(context),
+            borderRadius: BorderRadius.circular(8),
+            child: SizedBox.square(
+              dimension: dark ? 40 : 42,
+              child: Icon(_icon, color: foreground, size: 21),
             ),
           ),
-        ],
+        ),
       ),
     );
   }
 }
 
-class _BackdropMusicControl extends StatelessWidget {
-  const _BackdropMusicControl({
+class _AudioControlPanel extends StatelessWidget {
+  const _AudioControlPanel({
     required this.enabled,
     required this.effectsEnabled,
     required this.volume,
@@ -164,78 +301,130 @@ class _BackdropMusicControl extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Semantics(
-      container: true,
-      label: 'Controle de musica',
-      child: Material(
-        color: Colors.white.withValues(alpha: 0.96),
-        borderRadius: BorderRadius.circular(999),
-        elevation: 10,
-        shadowColor: AppTheme.midnight.withValues(alpha: 0.28),
-        child: SizedBox(
-          width: 218,
-          height: 50,
-          child: Row(
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.98),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppTheme.rule),
+        boxShadow: [
+          BoxShadow(
+            color: AppTheme.midnight.withValues(alpha: 0.18),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: SizedBox(
+        width: 184,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Tooltip(
-                message: enabled ? 'Desligar música' : 'Ligar música',
-                child: InkWell(
-                  onTap: onToggleMusic,
-                  borderRadius: BorderRadius.circular(999),
-                  child: SizedBox.square(
-                    dimension: 50,
-                    child: Icon(
-                      enabled
-                          ? volume > 0.55
-                                ? Icons.volume_up_rounded
-                                : Icons.volume_down_rounded
-                          : Icons.volume_off_rounded,
-                      color: enabled ? AppTheme.pressBlue : AppTheme.midnight,
-                      size: 25,
+              _AudioPanelButton(
+                icon: enabled
+                    ? Icons.music_note_rounded
+                    : Icons.music_off_rounded,
+                label: enabled ? 'Música' : 'Música mute',
+                active: enabled,
+                onTap: onToggleMusic,
+              ),
+              SizedBox(
+                height: 36,
+                child: Row(
+                  children: [
+                    const SizedBox(
+                      width: 34,
+                      child: Icon(
+                        Icons.volume_up_rounded,
+                        color: AppTheme.pressBlue,
+                        size: 18,
+                      ),
                     ),
-                  ),
+                    Expanded(
+                      child: SliderTheme(
+                        data: SliderTheme.of(context).copyWith(
+                          trackHeight: 3,
+                          activeTrackColor: AppTheme.pressBlue,
+                          inactiveTrackColor: AppTheme.rule,
+                          thumbColor: AppTheme.pressBlue,
+                          overlayColor: AppTheme.pressBlue.withValues(
+                            alpha: 0.12,
+                          ),
+                          thumbShape: const RoundSliderThumbShape(
+                            enabledThumbRadius: 6,
+                          ),
+                          overlayShape: const RoundSliderOverlayShape(
+                            overlayRadius: 12,
+                          ),
+                        ),
+                        child: Slider(value: volume, onChanged: onVolumeChanged),
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              Expanded(
-                child: SliderTheme(
-                  data: SliderTheme.of(context).copyWith(
-                    trackHeight: 3,
-                    activeTrackColor: AppTheme.pressBlue,
-                    inactiveTrackColor: AppTheme.rule,
-                    thumbColor: AppTheme.pressBlue,
-                    overlayColor: AppTheme.pressBlue.withValues(alpha: 0.12),
-                    thumbShape: const RoundSliderThumbShape(
-                      enabledThumbRadius: 7,
-                    ),
-                    overlayShape: const RoundSliderOverlayShape(
-                      overlayRadius: 14,
-                    ),
-                  ),
-                  child: Slider(value: volume, onChanged: onVolumeChanged),
-                ),
+              _AudioPanelButton(
+                icon: effectsEnabled
+                    ? Icons.auto_awesome_rounded
+                    : Icons.do_not_disturb_on_rounded,
+                label: effectsEnabled ? 'Efeitos' : 'Efeitos mute',
+                active: effectsEnabled,
+                onTap: onToggleEffects,
               ),
-              Tooltip(
-                message: effectsEnabled ? 'Desligar efeitos' : 'Ligar efeitos',
-                child: InkWell(
-                  onTap: onToggleEffects,
-                  borderRadius: BorderRadius.circular(999),
-                  child: SizedBox.square(
-                    dimension: 42,
-                    child: Icon(
-                      effectsEnabled
-                          ? Icons.auto_awesome_rounded
-                          : Icons.do_not_disturb_on_rounded,
-                      color: effectsEnabled
-                          ? AppTheme.pressGold
-                          : AppTheme.midnight.withValues(alpha: 0.7),
-                      size: 22,
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 4),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AudioPanelButton extends StatelessWidget {
+  const _AudioPanelButton({
+    required this.icon,
+    required this.label,
+    required this.active,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final bool active;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: SizedBox(
+        height: 34,
+        child: Row(
+          children: [
+            SizedBox(
+              width: 34,
+              child: Icon(
+                icon,
+                color: active
+                    ? AppTheme.pressBlue
+                    : AppTheme.midnight.withValues(alpha: 0.64),
+                size: 18,
+              ),
+            ),
+            Expanded(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: AppTheme.midnight.withValues(alpha: 0.86),
+                  fontWeight: FontWeight.w800,
+                  fontSize: 13,
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );

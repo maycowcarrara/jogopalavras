@@ -18,7 +18,20 @@ Future<void> main() async {
       await errorReporter.initialize();
       FlutterError.onError = errorReporter.recordFlutterError;
       PlatformDispatcher.instance.onError = errorReporter.recordPlatformError;
-      ErrorWidget.builder = (_) => const AppErrorFallback();
+      ErrorWidget.builder = (details) {
+        unawaited(
+          errorReporter.record(
+            details.exception,
+            details.stack,
+            source: 'error_widget',
+            context: <String, Object?>{
+              'library': details.library,
+              'context': details.context?.toDescription(),
+            },
+          ),
+        );
+        return const AppErrorFallback();
+      };
 
       try {
         await AdService.instance.initialize();

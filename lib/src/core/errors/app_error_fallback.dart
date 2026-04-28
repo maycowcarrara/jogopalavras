@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:jogopalavras/src/screens/level_screen.dart';
 import 'package:jogopalavras/src/theme/app_theme.dart';
 import 'package:jogopalavras/src/widgets/app_backdrop.dart';
 
@@ -11,6 +12,7 @@ class AppErrorFallback extends StatelessWidget {
       body: AppBackdrop(
         primary: AppTheme.pressBlue,
         secondary: AppTheme.pressRed,
+        showAudioControl: false,
         child: SafeArea(
           child: Center(
             child: ConstrainedBox(
@@ -57,20 +59,14 @@ class AppErrorFallback extends StatelessWidget {
                           children: [
                             Expanded(
                               child: OutlinedButton(
-                                onPressed: () {
-                                  Navigator.of(context).maybePop();
-                                },
+                                onPressed: () => _goBack(context),
                                 child: const Text('Voltar'),
                               ),
                             ),
                             const SizedBox(width: 10),
                             Expanded(
                               child: ElevatedButton(
-                                onPressed: () {
-                                  Navigator.of(
-                                    context,
-                                  ).popUntil((route) => route.isFirst);
-                                },
+                                onPressed: () => _goHome(context),
                                 child: const Text('Início'),
                               ),
                             ),
@@ -85,6 +81,24 @@ class AppErrorFallback extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+
+  Future<void> _goBack(BuildContext context) async {
+    final navigator = Navigator.of(context, rootNavigator: true);
+    final didPop = await navigator.maybePop();
+    if (!didPop && context.mounted) {
+      _goHome(context);
+    }
+  }
+
+  void _goHome(BuildContext context) {
+    Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
+      MaterialPageRoute<void>(
+        settings: const RouteSettings(name: '/levels'),
+        builder: (_) => const LevelScreen(),
+      ),
+      (route) => false,
     );
   }
 }

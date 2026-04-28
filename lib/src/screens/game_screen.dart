@@ -139,8 +139,9 @@ class _InitialsDialogState extends State<_InitialsDialog> {
 class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   static const int _startingScore = RankingStore.startingScore;
   static const int _pointsPerHint = RankingStore.pointsPerHint;
+  static const int _pointsPerSkip = RankingStore.pointsPerSkip;
   static const int _progressFragments = 10;
-  static const Duration _hintDelay = Duration(seconds: 22);
+  static const Duration _hintDelay = Duration(seconds: 10);
   static const Duration _typewriterTick = Duration(milliseconds: 78);
   static const Duration _hitCelebrationHold = Duration(milliseconds: 900);
 
@@ -159,6 +160,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   int _score = _startingScore;
   int _errors = 0;
   int _hintsUsed = 0;
+  int _skipsUsed = 0;
   int _elapsedSeconds = 0;
   int _roundErrors = 0;
   bool _hasError = false;
@@ -214,6 +216,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       elapsedSeconds: _elapsedSeconds,
       errors: _errors,
       hintsUsed: _hintsUsed,
+      skipsUsed: _skipsUsed,
     );
   }
 
@@ -350,6 +353,53 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     });
   }
 
+  Future<void> _skipWord() async {
+    if (_isPaused || _isHitCelebrating) {
+      return;
+    }
+
+    final shouldSkip = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: AppTheme.card,
+        shape: RoundedRectangleBorder(
+          side: const BorderSide(color: AppTheme.rule),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        title: const Text(
+          'Pular palavra?',
+          style: TextStyle(fontWeight: FontWeight.w900),
+        ),
+        content: Text(
+          'Você perde $_pointsPerSkip pontos e recebe outra palavra.',
+          style: const TextStyle(height: 1.4),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton.icon(
+            onPressed: () => Navigator.of(context).pop(true),
+            icon: const Icon(Icons.skip_next_rounded, size: 18),
+            label: const Text('Pular'),
+          ),
+        ],
+      ),
+    );
+
+    if (shouldSkip != true || !mounted) {
+      return;
+    }
+
+    _hintTimer?.cancel();
+    setState(() {
+      _skipsUsed += 1;
+      _score = _scoreFromStats();
+    });
+    _generateRound();
+  }
+
   void _handleDrag(Offset localPosition, _BoardMetrics metrics) {
     if (_isPaused || _isHitCelebrating) {
       return;
@@ -469,6 +519,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       completedAt: DateTime.now(),
       errors: _errors,
       hintsUsed: _hintsUsed,
+      skipsUsed: _skipsUsed,
     );
 
     final lastInitials = await RankingStore.instance.loadLastInitials();
@@ -499,6 +550,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       completedAt: completedEntry.completedAt,
       errors: completedEntry.errors,
       hintsUsed: completedEntry.hintsUsed,
+      skipsUsed: completedEntry.skipsUsed,
     );
   }
 
@@ -595,6 +647,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
           _score = _startingScore;
           _errors = 0;
           _hintsUsed = 0;
+          _skipsUsed = 0;
           _elapsedSeconds = 0;
           _discoveredWords = <String>[];
           _sessionWords.clear();
@@ -639,6 +692,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
             AppBackdrop(
               primary: widget.level.accent,
               secondary: AppTheme.pressRed,
+              showAudioControl: false,
               child: const SizedBox.expand(),
             ),
             IgnorePointer(
@@ -726,6 +780,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                                         hintSuggested: _hintSuggested,
                                         hintRevealed: _hintRevealed,
                                         hintPenalty: _pointsPerHint,
+                                        skipPenalty: _pointsPerSkip,
                                         hasError: _hasError,
                                         isHitCelebrating: _isHitCelebrating,
                                         typedHitWord: _typedHitWord,
@@ -735,6 +790,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                                             _discoveredWords.length,
                                         compact: layout.compact,
                                         onRevealHint: _revealHint,
+                                        onSkipWord: _skipWord,
                                         revealedFragments: revealedFragments,
                                         totalFragments: _progressFragments,
                                       ),
@@ -905,6 +961,8 @@ class _GameHeader extends StatelessWidget {
                 compact: compact,
               ),
               SizedBox(width: compact ? 8 : 10),
+              const AppAudioControl(dark: true),
+              SizedBox(width: compact ? 8 : 10),
               _HeaderScorePill(
                 score: score,
                 fontSize: scoreSize,
@@ -943,6 +1001,7 @@ class _RoundScenePanel extends StatelessWidget {
     required this.hintSuggested,
     required this.hintRevealed,
     required this.hintPenalty,
+    required this.skipPenalty,
     required this.hasError,
     required this.isHitCelebrating,
     required this.typedHitWord,
@@ -951,6 +1010,7 @@ class _RoundScenePanel extends StatelessWidget {
     required this.discoveredCount,
     required this.compact,
     required this.onRevealHint,
+    required this.onSkipWord,
     required this.revealedFragments,
     required this.totalFragments,
   });
@@ -962,6 +1022,7 @@ class _RoundScenePanel extends StatelessWidget {
   final bool hintSuggested;
   final bool hintRevealed;
   final int hintPenalty;
+  final int skipPenalty;
   final bool hasError;
   final bool isHitCelebrating;
   final String typedHitWord;
@@ -970,6 +1031,7 @@ class _RoundScenePanel extends StatelessWidget {
   final int discoveredCount;
   final bool compact;
   final VoidCallback onRevealHint;
+  final VoidCallback onSkipWord;
   final int revealedFragments;
   final int totalFragments;
 
@@ -1104,21 +1166,35 @@ class _RoundScenePanel extends StatelessWidget {
                           const SizedBox(height: 8),
                         ] else
                           const SizedBox(height: 5),
-                        if (showHintControl)
-                          _HintPanel(
-                            hint: hint,
-                            suggested: hintSuggested,
-                            revealed: hintRevealed,
-                            hintPenalty: hintPenalty,
-                            compact: true,
-                            dense: true,
-                            onPressed: onRevealHint,
-                          )
-                        else if (micro)
-                          _TinyInfoChip(
-                            label: '$discoveredCount acertos',
-                            fontSize: metaFontSize,
-                          ),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (showHintControl) ...[
+                              _HintPanel(
+                                hint: hint,
+                                suggested: hintSuggested,
+                                revealed: hintRevealed,
+                                hintPenalty: hintPenalty,
+                                compact: true,
+                                dense: true,
+                                onPressed: onRevealHint,
+                              ),
+                              const SizedBox(height: 6),
+                            ] else if (micro) ...[
+                              _TinyInfoChip(
+                                label: '$discoveredCount acertos',
+                                fontSize: metaFontSize,
+                              ),
+                              const SizedBox(height: 6),
+                            ],
+                            _SkipWordButton(
+                              penalty: skipPenalty,
+                              dense: true,
+                              compact: true,
+                              onPressed: onSkipWord,
+                            ),
+                          ],
+                        ),
                       ],
                     );
                   },
@@ -1336,44 +1412,92 @@ class _HintPanel extends StatelessWidget {
       return const SizedBox.shrink();
     }
 
-    return Material(
-      color: AppTheme.pressGold.withValues(alpha: 0.14),
-      borderRadius: BorderRadius.circular(7),
-      child: InkWell(
-        onTap: onPressed,
-        borderRadius: BorderRadius.circular(7),
-        child: Padding(
-          padding: EdgeInsets.symmetric(
-            horizontal: dense ? 8 : 10,
-            vertical: dense ? 6 : 7,
+    return FilledButton.icon(
+      onPressed: onPressed,
+      icon: Icon(
+        Icons.lightbulb_outline_rounded,
+        size: dense ? 14 : 15,
+      ),
+      label: Text(
+        'Ver dica • -$hintPenalty pts',
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+      style: FilledButton.styleFrom(
+        backgroundColor: AppTheme.pressGold,
+        foregroundColor: AppTheme.midnight,
+        elevation: 2,
+        shadowColor: AppTheme.midnight.withValues(alpha: 0.24),
+        visualDensity: VisualDensity.compact,
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        minimumSize: Size(0, dense ? 32 : 36),
+        padding: EdgeInsets.symmetric(
+          horizontal: dense ? 10 : 12,
+          vertical: dense ? 7 : 8,
+        ),
+        shape: RoundedRectangleBorder(
+          side: BorderSide(
+            color: AppTheme.midnight.withValues(alpha: 0.18),
           ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                Icons.lightbulb_outline_rounded,
-                color: AppTheme.pressGold,
-                size: dense ? 13 : 14,
-              ),
-              const SizedBox(width: 6),
-              Flexible(
-                child: Text(
-                  'Ver dica • -$hintPenalty pts',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: AppTheme.midnight,
-                    fontWeight: FontWeight.w900,
-                    fontSize: dense
-                        ? 10.5
-                        : compact
-                        ? 11
-                        : 12,
-                  ),
-                ),
-              ),
-            ],
-          ),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        textStyle: TextStyle(
+          fontWeight: FontWeight.w900,
+          fontSize: dense
+              ? 10.5
+              : compact
+              ? 11
+              : 12,
+          letterSpacing: 0,
+        ),
+      ),
+    );
+  }
+}
+
+class _SkipWordButton extends StatelessWidget {
+  const _SkipWordButton({
+    required this.penalty,
+    required this.dense,
+    required this.compact,
+    required this.onPressed,
+  });
+
+  final int penalty;
+  final bool dense;
+  final bool compact;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return OutlinedButton.icon(
+      onPressed: onPressed,
+      icon: Icon(Icons.skip_next_rounded, size: dense ? 15 : 16),
+      label: Text(
+        'Pular • -$penalty pts',
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+      style: OutlinedButton.styleFrom(
+        foregroundColor: AppTheme.pressRed,
+        backgroundColor: AppTheme.card.withValues(alpha: 0.82),
+        side: BorderSide(color: AppTheme.pressRed.withValues(alpha: 0.46)),
+        visualDensity: VisualDensity.compact,
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        minimumSize: Size(0, dense ? 30 : 34),
+        padding: EdgeInsets.symmetric(
+          horizontal: dense ? 9 : 11,
+          vertical: dense ? 6 : 7,
+        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        textStyle: TextStyle(
+          fontWeight: FontWeight.w900,
+          fontSize: dense
+              ? 10.5
+              : compact
+              ? 11
+              : 12,
+          letterSpacing: 0,
         ),
       ),
     );
