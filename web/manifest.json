@@ -1,11 +1,11 @@
 {
-    "name": "Anagrama Oculto",
-    "short_name": "Anagrama",
+    "name": "Entreletras: Palavras Ocultas",
+    "short_name": "Entreletras",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#F3EFE5",
     "theme_color": "#171717",
-    "description": "Jogo mobile de anagramas com palavras em pt-BR.",
+    "description": "Jogo mobile de palavras ocultas em pt-BR.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

@@ -748,20 +748,26 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                               final gap = layout.contentGap;
                               final maxMiddleHeight =
                                   contentConstraints.maxHeight;
+                              final showHintControl =
+                                  _hintSuggested || _hintRevealed;
+                              final minPanelHeight = layout.minPanelHeight +
+                                  (showHintControl
+                                      ? layout.hintPanelHeightAllowance
+                                      : 0);
                               final targetBoardSize = min(
                                 contentConstraints.maxWidth,
                                 maxMiddleHeight * layout.boardHeightFactor,
                               );
                               final maxBoardWithPanel = max(
                                 layout.minBoardSize,
-                                maxMiddleHeight - gap - layout.minPanelHeight,
+                                maxMiddleHeight - gap - minPanelHeight,
                               );
                               final boardSize = min(
                                 targetBoardSize,
                                 maxBoardWithPanel,
                               );
                               final panelHeight = max(
-                                layout.minPanelHeight,
+                                minPanelHeight,
                                 maxMiddleHeight - boardSize - gap,
                               );
 
@@ -1390,6 +1396,8 @@ class _HintPanel extends StatelessWidget {
               Expanded(
                 child: Text(
                   'Dica: $hint',
+                  maxLines: dense ? 1 : 2,
+                  overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     color: AppTheme.midnight,
                     fontWeight: FontWeight.w800,
@@ -2349,6 +2357,7 @@ class _GameLayoutMetrics {
     required this.contentGap,
     required this.bannerGap,
     required this.minPanelHeight,
+    required this.hintPanelHeightAllowance,
     required this.minBoardSize,
     required this.boardHeightFactor,
     required this.compact,
@@ -2393,6 +2402,11 @@ class _GameLayoutMetrics {
           : compact
           ? 144.0
           : 164.0,
+      hintPanelHeightAllowance: veryCompact
+          ? 34.0
+          : compact
+          ? 30.0
+          : 24.0,
       minBoardSize: gridSize >= 8
           ? 286.0
           : gridSize >= 6
@@ -2411,6 +2425,7 @@ class _GameLayoutMetrics {
   final double contentGap;
   final double bannerGap;
   final double minPanelHeight;
+  final double hintPanelHeightAllowance;
   final double minBoardSize;
   final double boardHeightFactor;
   final bool compact;

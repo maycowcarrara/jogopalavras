@@ -1,5 +1,5 @@
 name: jogopalavras
-description: "Jogo de anagramas com palavras em pt-BR, visual moderno e base pronta para evolução mobile."
+description: "Entreletras: Palavras Ocultas, jogo de palavras em pt-BR com visual editorial e base pronta para evolução mobile."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev

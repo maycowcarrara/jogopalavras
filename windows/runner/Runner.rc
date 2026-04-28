@@ -90,12 +90,12 @@ BEGIN
         BLOCK "040904e4"
         BEGIN
             VALUE "CompanyName", "br.com.mrcdev" "\0"
-            VALUE "FileDescription", "Anagrama Oculto" "\0"
+            VALUE "FileDescription", "Entreletras: Palavras Ocultas" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "anagrama_oculto" "\0"
+            VALUE "InternalName", "entreletras" "\0"
             VALUE "LegalCopyright", "Copyright (C) 2026 br.com.mrcdev. All rights reserved." "\0"
-            VALUE "OriginalFilename", "anagrama_oculto.exe" "\0"
-            VALUE "ProductName", "Anagrama Oculto" "\0"
+            VALUE "OriginalFilename", "entreletras.exe" "\0"
+            VALUE "ProductName", "Entreletras: Palavras Ocultas" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

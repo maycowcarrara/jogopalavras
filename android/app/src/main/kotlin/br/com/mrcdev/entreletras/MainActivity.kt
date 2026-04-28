@@ -1,4 +1,4 @@
-package br.com.mrcdev.anagramaoculto
+package br.com.mrcdev.entreletras
 
 import io.flutter.embedding.android.FlutterActivity
 

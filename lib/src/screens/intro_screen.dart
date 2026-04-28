@@ -115,7 +115,7 @@ class _IntroScreenState extends State<IntroScreen>
                               ),
                               const SizedBox(height: 18),
                               Text(
-                                'Anagrama\nOculto',
+                                'Entreletras',
                                 style: theme.textTheme.displayMedium?.copyWith(
                                   color: AppTheme.midnight,
                                   height: 0.95,

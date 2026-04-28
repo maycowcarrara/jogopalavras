@@ -12,7 +12,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
 
-    expect(find.text('Anagrama\nOculto'), findsOneWidget);
+    expect(find.text('Entreletras'), findsOneWidget);
     expect(find.text('Iniciar jogo'), findsOneWidget);
 
     await tester.ensureVisible(find.text('Iniciar jogo'));

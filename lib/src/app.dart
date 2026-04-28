@@ -50,7 +50,7 @@ class _WordMazeAppState extends State<WordMazeApp> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Anagrama Oculto',
+      title: 'Entreletras: Palavras Ocultas',
       theme: AppTheme.lightTheme,
       debugShowCheckedModeBanner: false,
       navigatorObservers: [AppErrorReporter.instance.routeObserver],

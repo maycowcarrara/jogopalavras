@@ -2,16 +2,16 @@
 
 ## Nome
 
-Anagrama Oculto
+Entreletras: Palavras Ocultas
 
 ## Descrição curta
 
-Forme palavras, treine o vocabulário e relaxe em rodadas rápidas.
+Descubra palavras ocultas em rodadas rápidas de letras.
 
 ## Descrição completa
 
-Anagrama Oculto é um jogo de palavras em português feito para quem quer passar
-o tempo de um jeito leve, inteligente e divertido.
+Entreletras: Palavras Ocultas é um jogo de palavras em português feito para
+quem quer passar o tempo de um jeito leve, inteligente e divertido.
 
 Arraste o dedo pelo tabuleiro, conecte letras e encontre a palavra escondida.
 Cada acerto soma pontos, revela partes da rodada e aproxima você da meta final.
@@ -28,8 +28,8 @@ O jogo inclui:
 - visual inspirado em jornal, leitura e jogos clássicos de palavras;
 - anúncios discretos e pouco frequentes, quando ativados.
 
-Anagrama Oculto não exige cadastro. É só abrir, escolher o nível e procurar a
-próxima palavra.
+Entreletras não exige cadastro. É só abrir, escolher o nível e procurar a
+próxima palavra oculta.
 
 ## Destaques para screenshots
 
@@ -50,10 +50,10 @@ próxima palavra.
 
 ## Palavras-chave naturais
 
-anagrama, jogo de palavras, palavras em português, jogo casual, vocabulário,
+palavras ocultas, anagrama, jogo de palavras, palavras em português, jogo casual, vocabulário,
 raciocínio, letras, passatempo, jogo offline, jogo inteligente
 
 ## Notas de lançamento inicial
 
-Primeira versão pública do Anagrama Oculto: jogo de anagramas em português com
-três níveis, visual editorial, trilhas leves e partidas rápidas.
+Primeira versão pública de Entreletras: Palavras Ocultas, um jogo de palavras
+em português com três níveis, visual editorial, trilhas leves e partidas rápidas.

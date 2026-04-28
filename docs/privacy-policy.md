@@ -2,13 +2,13 @@
 
 Última atualização: 28 de abril de 2026
 
-Esta política descreve como o Anagrama Oculto trata informações dos usuários.
+Esta política descreve como o Entreletras: Palavras Ocultas trata informações dos usuários.
 Antes de publicar, substitua os campos de contato e publique a versão HTML em
 `docs/privacy-policy.html` pelo GitHub Pages.
 
 ## Resumo
 
-O Anagrama Oculto é um jogo de palavras. O app não exige cadastro, não solicita
+O Entreletras: Palavras Ocultas é um jogo de palavras. O app não exige cadastro, não solicita
 nome, email ou telefone e não possui servidor próprio para armazenar dados dos
 usuários.
 
@@ -20,7 +20,7 @@ dados ficam no dispositivo e servem apenas para a experiência do jogo.
 
 ## Anúncios
 
-O Anagrama Oculto pode exibir anúncios por meio do Google AdMob. Quando os
+O Entreletras: Palavras Ocultas pode exibir anúncios por meio do Google AdMob. Quando os
 anúncios estiverem ativados, o Google e seus parceiros podem coletar e tratar
 informações como identificadores do dispositivo, Advertising ID, informações de
 anúncios, diagnósticos, interações com anúncios e dados aproximados necessários
@@ -41,7 +41,7 @@ políticas desses provedores.
 
 ## Crianças
 
-O Anagrama Oculto não foi projetado especificamente para crianças. Se a
+O Entreletras: Palavras Ocultas não foi projetado especificamente para crianças. Se a
 estratégia de publicação mudar para atingir crianças, os anúncios, a política de
 privacidade e os formulários da Play Console devem ser revisados para atender às
 políticas de famílias da Google Play.

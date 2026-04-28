@@ -1,7 +1,8 @@
-# Anagrama Oculto
+# Entreletras: Palavras Ocultas
 
-Jogo mobile em Flutter focado em formar palavras em português dentro de um grid
-com arraste, visual editorial inspirado em jornal e ritmo de rodada curto.
+Jogo mobile em Flutter focado em revelar palavras ocultas em português dentro
+de um grid com arraste, visual editorial inspirado em jornal e ritmo de rodada
+curto.
 
 ## O que existe hoje
 

@@ -5,7 +5,7 @@ em jogo casual, inteligente e com anúncios não intrusivos.
 
 ## Requisitos técnicos
 
-- `applicationId`: `br.com.mrcdev.anagramaoculto`.
+- `applicationId`: `br.com.mrcdev.entreletras`.
 - `minSdk`: controlado pelo Flutter atual.
 - `targetSdk`: controlado pelo Flutter atual, hoje acima do mínimo exigido pela
   Google Play para novos apps.
@@ -16,7 +16,7 @@ em jogo casual, inteligente e com anúncios não intrusivos.
 
 ## Antes de publicar
 
-1. Crie o app na Play Console com o nome `Anagrama Oculto`.
+1. Crie o app na Play Console com o nome `Entreletras: Palavras Ocultas`.
 2. Confirme se o `applicationId` atual é definitivo para a sua marca. Depois de
    publicar, trocar o pacote significa publicar outro app.
 3. Crie um `android/key.properties` a partir de `android/key.properties.example`.
