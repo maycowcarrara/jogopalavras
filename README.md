@@ -10,7 +10,8 @@ com arraste, visual editorial inspirado em jornal e ritmo de rodada curto.
 - três níveis com grids `4x4`, `6x6` e `8x8`
 - cabeçalho compacto de pontuação com meta de rodada
 - card de progresso visual no meio da tela com "cena" sendo revelada aos poucos
-- trilha de fundo por nível com botão de mute na tela de jogo
+- playlist de trilha de fundo alternando entre as musicas de `assets/audio/`
+  com botão de mute na tela de jogo
 - aviso claro sobre anúncios e objetivo do jogo
 - preparação para AdMob com banner reservado e interstitial em pausas naturais
 - ranking publico e diagnosticos remotos via Cloudflare Worker
@@ -24,11 +25,25 @@ Cada rodada escolhe uma palavra alvo, espalha as letras no tabuleiro e o jogador
 - erro: reduz parte da pontuação e limpa a tentativa atual
 - objetivo: chegar a `150` pontos para fechar a rodada
 
-As trilhas usadas nesta versão ficam em `assets/audio/`:
+As trilhas usadas nesta versão ficam em `assets/audio/`. A pasta inteira esta
+declarada no `pubspec.yaml`, entao esses arquivos ja sao empacotados no app.
 
-- `easy_loop.mp3`
-- `medium_loop.mp3`
-- `hard_loop.mp3`
+O app inicia uma faixa de acordo com o nivel escolhido e, ao final de cada MP3,
+avanca automaticamente para a proxima musica da playlist.
+
+Para gerar MP3s menores, instale o `ffmpeg` e rode:
+
+```powershell
+npm run audio:compress
+```
+
+Por padrao, os arquivos compactados sao escritos em `assets/audio-compressed/`.
+Para substituir os MP3s usados pelo app e manter backup dos originais em
+`assets/audio-original/`:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/compress-audio.ps1 -InPlace
+```
 
 ## Estrutura principal
 

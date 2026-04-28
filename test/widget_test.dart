@@ -28,7 +28,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Coluna leve'), findsOneWidget);
-    expect(find.text('0/150'), findsOneWidget);
+    expect(find.text('0/10 palavras'), findsOneWidget);
   });
 
   testWidgets('ranking abre jogo direto no nível selecionado', (tester) async {
@@ -46,6 +46,6 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Caderno principal'), findsOneWidget);
-    expect(find.text('0/150'), findsOneWidget);
+    expect(find.text('0/8 palavras'), findsOneWidget);
   });
 }

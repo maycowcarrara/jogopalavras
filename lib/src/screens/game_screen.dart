@@ -137,11 +137,8 @@ class _InitialsDialogState extends State<_InitialsDialog> {
 }
 
 class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
-  static const int _goalScore = 150;
-  static const int _pointsPerHit = 10;
-  static const int _pointsPerHintHit = 6;
-  static const int _pointsPerError = 5;
-  static const int _maxSpeedBonus = 10;
+  static const int _startingScore = RankingStore.startingScore;
+  static const int _pointsPerHint = RankingStore.pointsPerHint;
   static const int _progressFragments = 10;
   static const Duration _hintDelay = Duration(seconds: 22);
   static const Duration _typewriterTick = Duration(milliseconds: 78);
@@ -150,6 +147,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   late final Map<GameLevel, WordDeck<WordEntry>> _wordDecks;
   late final Random _random;
   Timer? _hintTimer;
+  Timer? _scoreTimer;
 
   List<String> _grid = <String>[];
   List<int> _selectedIndices = <int>[];
@@ -158,16 +156,18 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   String _currentWord = '';
   String _targetWord = '';
   String _currentHint = '';
-  int _score = 0;
+  int _score = _startingScore;
+  int _errors = 0;
+  int _hintsUsed = 0;
+  int _elapsedSeconds = 0;
   int _roundErrors = 0;
   bool _hasError = false;
   bool _hintSuggested = false;
   bool _hintRevealed = false;
   bool _musicEnabled = true;
   bool _isHitCelebrating = false;
+  bool _isPaused = false;
   String _typedHitWord = '';
-  DateTime _gameStartedAt = DateTime.now();
-  DateTime _wordStartedAt = DateTime.now();
   Offset? _dragPosition;
 
   @override
@@ -181,21 +181,49 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     };
     _musicEnabled = GameMusicService.instance.enabled;
     _generateRound();
+    _startScoreTimer();
     _startMusic();
   }
 
   @override
   void dispose() {
     _hintTimer?.cancel();
+    _scoreTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     GameMusicService.instance.stop();
     super.dispose();
   }
 
+  void _startScoreTimer() {
+    _scoreTimer?.cancel();
+    _scoreTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        if (!_isHitCelebrating && !_isPaused) {
+          _elapsedSeconds += 1;
+        }
+        _score = _scoreFromStats();
+      });
+    });
+  }
+
+  int _scoreFromStats() {
+    return RankingStore.scoreForPerformance(
+      words: _discoveredWords.length,
+      elapsedSeconds: _elapsedSeconds,
+      errors: _errors,
+      hintsUsed: _hintsUsed,
+    );
+  }
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      _resumeMusic();
+      if (!_isPaused) {
+        _resumeMusic();
+      }
       return;
     }
 
@@ -219,6 +247,29 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       nextValue,
       fallbackLevel: widget.level,
     );
+    if (_isPaused) {
+      await GameMusicService.instance.pause();
+    }
+  }
+
+  Future<void> _togglePause() async {
+    final nextValue = !_isPaused;
+    setState(() {
+      _isPaused = nextValue;
+      _dragPosition = null;
+      if (nextValue) {
+        _selectedIndices = <int>[];
+        _currentWord = '';
+        _hasError = false;
+      }
+    });
+
+    if (nextValue) {
+      await GameMusicService.instance.pause();
+      return;
+    }
+
+    await _resumeMusic();
   }
 
   void _generateRound() {
@@ -248,7 +299,6 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       _hintRevealed = false;
       _isHitCelebrating = false;
       _typedHitWord = '';
-      _wordStartedAt = DateTime.now();
     });
     _scheduleHintPrompt();
   }
@@ -265,14 +315,8 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       return widget.level;
     }
 
-    final progress = _score / _goalScore;
-    if (progress < 0.34) {
-      return GameLevel.easy;
-    }
-    if (progress < 0.67) {
-      return GameLevel.medium;
-    }
-    return GameLevel.hard;
+    final sourceLevels = widget.level.sourceLevels;
+    return sourceLevels[_random.nextInt(sourceLevels.length)];
   }
 
   void _scheduleHintPrompt() {
@@ -288,7 +332,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   }
 
   void _revealHint() {
-    if (_hintRevealed || _currentHint.isEmpty) {
+    if (_isPaused || _hintRevealed || _currentHint.isEmpty) {
       return;
     }
 
@@ -296,11 +340,13 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     setState(() {
       _hintRevealed = true;
       _hintSuggested = false;
+      _hintsUsed += 1;
+      _score = _scoreFromStats();
     });
   }
 
   void _handleDrag(Offset localPosition, _BoardMetrics metrics) {
-    if (_isHitCelebrating) {
+    if (_isPaused || _isHitCelebrating) {
       return;
     }
 
@@ -322,7 +368,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _onDragEnd() async {
-    if (_isHitCelebrating) {
+    if (_isPaused || _isHitCelebrating) {
       return;
     }
 
@@ -334,26 +380,24 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     if (_currentWord == _targetWord) {
       _hintTimer?.cancel();
       final completedWord = _targetWord;
-      final speedBonus = _speedBonusFor(
-        DateTime.now().difference(_wordStartedAt),
-      );
-      final earnedPoints =
-          (_hintRevealed ? _pointsPerHintHit : _pointsPerHit) +
-          (_hintRevealed ? speedBonus ~/ 2 : speedBonus);
+      final completedWords = _discoveredWords.length + 1;
       setState(() {
         _dragPosition = null;
-        _score += earnedPoints;
         _discoveredWords = [completedWord, ..._discoveredWords];
+        _score = _scoreFromStats();
         _isHitCelebrating = true;
         _typedHitWord = '';
       });
 
+      await GameMusicService.instance.playWordVictory();
       await _playHitCelebration(completedWord);
       if (!mounted) {
         return;
       }
 
-      if (_score >= _goalScore) {
+      if (completedWords >= widget.level.targetWordCount) {
+        _scoreTimer?.cancel();
+        await GameMusicService.instance.playEndOfGame();
         final entry = await _showInitialsDialog();
         if (entry == null || !mounted) {
           return;
@@ -378,33 +422,14 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
 
     setState(() {
       _dragPosition = null;
-      _score = max(0, _score - _pointsPerError);
       _hasError = true;
+      _errors += 1;
+      _score = _scoreFromStats();
       _roundErrors += 1;
       _hintSuggested = _hintSuggested || (!_hintRevealed && _roundErrors >= 2);
       _selectedIndices = <int>[];
       _currentWord = '';
     });
-  }
-
-  int _speedBonusFor(Duration elapsed) {
-    final seconds = elapsed.inSeconds;
-    if (seconds <= 5) {
-      return _maxSpeedBonus;
-    }
-    if (seconds <= 10) {
-      return 8;
-    }
-    if (seconds <= 15) {
-      return 6;
-    }
-    if (seconds <= 22) {
-      return 4;
-    }
-    if (seconds <= 30) {
-      return 2;
-    }
-    return 0;
   }
 
   Future<void> _playHitCelebration(String word) async {
@@ -429,17 +454,16 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   }
 
   Future<RankingEntry?> _showInitialsDialog() async {
-    final elapsedSeconds = DateTime.now().difference(_gameStartedAt).inSeconds;
+    final finalScore = _scoreFromStats();
     final completedEntry = RankingEntry(
       initials: '',
       level: widget.level,
-      score: RankingStore.scoreForPerformance(
-        words: _discoveredWords.length,
-        elapsedSeconds: elapsedSeconds,
-      ),
+      score: finalScore,
       words: _discoveredWords.length,
-      elapsedSeconds: elapsedSeconds,
+      elapsedSeconds: _elapsedSeconds,
       completedAt: DateTime.now(),
+      errors: _errors,
+      hintsUsed: _hintsUsed,
     );
 
     final lastInitials = await RankingStore.instance.loadLastInitials();
@@ -468,6 +492,8 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       words: completedEntry.words,
       elapsedSeconds: completedEntry.elapsedSeconds,
       completedAt: completedEntry.completedAt,
+      errors: completedEntry.errors,
+      hintsUsed: completedEntry.hintsUsed,
     );
   }
 
@@ -561,8 +587,12 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
           return;
         }
         setState(() {
-          _score = 0;
+          _score = _startingScore;
+          _errors = 0;
+          _hintsUsed = 0;
+          _elapsedSeconds = 0;
           _discoveredWords = <String>[];
+          _sessionWords.clear();
           _currentWord = '';
           _selectedIndices = <int>[];
           _dragPosition = null;
@@ -571,22 +601,26 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
           _hintSuggested = false;
           _hintRevealed = false;
           _isHitCelebrating = false;
+          _isPaused = false;
           _typedHitWord = '';
-          _gameStartedAt = DateTime.now();
         });
         _generateRound();
+        _startScoreTimer();
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final progress = (_score / _goalScore).clamp(0.0, 1.0);
-    final revealedFragments = _score <= 0
+    final targetWordCount = widget.level.targetWordCount;
+    final progress = (_discoveredWords.length / targetWordCount).clamp(
+      0.0,
+      1.0,
+    );
+    final revealedFragments = _discoveredWords.isEmpty
         ? 0
-        : ((_score / _goalScore) * _progressFragments).ceil().clamp(
-            0,
-            _progressFragments,
-          );
+        : ((_discoveredWords.length / targetWordCount) * _progressFragments)
+              .ceil()
+              .clamp(0, _progressFragments);
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle.dark.copyWith(
@@ -642,8 +676,10 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                             level: widget.level,
                             score: _score,
                             progress: progress,
+                            isPaused: _isPaused,
                             compact: layout.compact,
                             prioritizeBoard: layout.prioritizeBoard,
+                            onTogglePause: _togglePause,
                           ),
                         ),
                         SizedBox(height: layout.sectionGap),
@@ -684,12 +720,12 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                                         hint: _currentHint,
                                         hintSuggested: _hintSuggested,
                                         hintRevealed: _hintRevealed,
-                                        hintedHitPoints: _pointsPerHintHit,
+                                        hintPenalty: _pointsPerHint,
                                         hasError: _hasError,
                                         isHitCelebrating: _isHitCelebrating,
                                         typedHitWord: _typedHitWord,
                                         score: _score,
-                                        goalScore: _goalScore,
+                                        targetWordCount: targetWordCount,
                                         discoveredCount:
                                             _discoveredWords.length,
                                         compact: layout.compact,
@@ -708,17 +744,36 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                                       alignment: Alignment.bottomCenter,
                                       child: SizedBox.square(
                                         dimension: boardSize,
-                                        child: _GridBoard(
-                                          grid: _grid,
-                                          selectedIndices: _selectedIndices,
-                                          hasError: _hasError,
-                                          dragPosition: _dragPosition,
-                                          gridSize: widget.level.gridSize,
-                                          accent: widget.level.accent,
-                                          compact: layout.compact,
-                                          onPanStart: _handleDrag,
-                                          onPanUpdate: _handleDrag,
-                                          onPanEnd: _onDragEnd,
+                                        child: AnimatedSwitcher(
+                                          duration: const Duration(
+                                            milliseconds: 180,
+                                          ),
+                                          child: _isPaused
+                                              ? _PausedBoard(
+                                                  key: const ValueKey<String>(
+                                                    'paused',
+                                                  ),
+                                                  accent: widget.level.accent,
+                                                  compact: layout.compact,
+                                                  onResume: _togglePause,
+                                                )
+                                              : _GridBoard(
+                                                  key: const ValueKey<String>(
+                                                    'board',
+                                                  ),
+                                                  grid: _grid,
+                                                  selectedIndices:
+                                                      _selectedIndices,
+                                                  hasError: _hasError,
+                                                  dragPosition: _dragPosition,
+                                                  gridSize:
+                                                      widget.level.gridSize,
+                                                  accent: widget.level.accent,
+                                                  compact: layout.compact,
+                                                  onPanStart: _handleDrag,
+                                                  onPanUpdate: _handleDrag,
+                                                  onPanEnd: _onDragEnd,
+                                                ),
                                         ),
                                       ),
                                     ),
@@ -748,15 +803,19 @@ class _GameHeader extends StatelessWidget {
     required this.level,
     required this.score,
     required this.progress,
+    required this.isPaused,
     required this.compact,
     required this.prioritizeBoard,
+    required this.onTogglePause,
   });
 
   final GameLevel level;
   final int score;
   final double progress;
+  final bool isPaused;
   final bool compact;
   final bool prioritizeBoard;
+  final VoidCallback onTogglePause;
 
   @override
   Widget build(BuildContext context) {
@@ -836,9 +895,15 @@ class _GameHeader extends StatelessWidget {
                   ],
                 ),
               ),
+              SizedBox(width: compact ? 8 : 10),
+              _HeaderPauseButton(
+                paused: isPaused,
+                onPressed: onTogglePause,
+                compact: compact,
+              ),
+              SizedBox(width: compact ? 8 : 10),
               _HeaderScorePill(
                 score: score,
-                total: _GameScreenState._goalScore,
                 fontSize: scoreSize,
                 compact: compact,
               ),
@@ -874,12 +939,12 @@ class _RoundScenePanel extends StatelessWidget {
     required this.hint,
     required this.hintSuggested,
     required this.hintRevealed,
-    required this.hintedHitPoints,
+    required this.hintPenalty,
     required this.hasError,
     required this.isHitCelebrating,
     required this.typedHitWord,
     required this.score,
-    required this.goalScore,
+    required this.targetWordCount,
     required this.discoveredCount,
     required this.compact,
     required this.musicEnabled,
@@ -895,12 +960,12 @@ class _RoundScenePanel extends StatelessWidget {
   final String hint;
   final bool hintSuggested;
   final bool hintRevealed;
-  final int hintedHitPoints;
+  final int hintPenalty;
   final bool hasError;
   final bool isHitCelebrating;
   final String typedHitWord;
   final int score;
-  final int goalScore;
+  final int targetWordCount;
   final int discoveredCount;
   final bool compact;
   final bool musicEnabled;
@@ -920,7 +985,7 @@ class _RoundScenePanel extends StatelessWidget {
       return '•';
     }).join(' ');
     final typingText = isHitCelebrating ? '$currentText ▌' : currentText;
-    final progressText = '$score/$goalScore pontos';
+    final progressText = '$discoveredCount/$targetWordCount palavras';
     final showHintControl = hintSuggested || hintRevealed;
 
     return Stack(
@@ -989,7 +1054,7 @@ class _RoundScenePanel extends StatelessWidget {
                           duration: const Duration(milliseconds: 180),
                           child: LayoutBuilder(
                             key: ValueKey<String>(
-                              '$typingText-$score-$goalScore-$isHitCelebrating',
+                              '$typingText-$score-$targetWordCount-$isHitCelebrating',
                             ),
                             builder: (context, constraints) {
                               final wordText = Text(
@@ -1051,7 +1116,7 @@ class _RoundScenePanel extends StatelessWidget {
                             hint: hint,
                             suggested: hintSuggested,
                             revealed: hintRevealed,
-                            hintedHitPoints: hintedHitPoints,
+                            hintPenalty: hintPenalty,
                             compact: true,
                             dense: true,
                             onPressed: onRevealHint,
@@ -1213,7 +1278,7 @@ class _HintPanel extends StatelessWidget {
     required this.hint,
     required this.suggested,
     required this.revealed,
-    required this.hintedHitPoints,
+    required this.hintPenalty,
     required this.compact,
     required this.onPressed,
     this.dense = false,
@@ -1222,7 +1287,7 @@ class _HintPanel extends StatelessWidget {
   final String hint;
   final bool suggested;
   final bool revealed;
-  final int hintedHitPoints;
+  final int hintPenalty;
   final bool compact;
   final bool dense;
   final VoidCallback onPressed;
@@ -1300,7 +1365,7 @@ class _HintPanel extends StatelessWidget {
               const SizedBox(width: 6),
               Flexible(
                 child: Text(
-                  'Ver dica • +$hintedHitPoints pts',
+                  'Ver dica • -$hintPenalty pts',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
@@ -1828,6 +1893,7 @@ class _PaperSection {
 
 class _GridBoard extends StatelessWidget {
   const _GridBoard({
+    super.key,
     required this.grid,
     required this.selectedIndices,
     required this.hasError,
@@ -1932,6 +1998,86 @@ class _GridBoard extends StatelessWidget {
               ),
             );
           },
+        ),
+      ),
+    );
+  }
+}
+
+class _PausedBoard extends StatelessWidget {
+  const _PausedBoard({
+    super.key,
+    required this.accent,
+    required this.compact,
+    required this.onResume,
+  });
+
+  final Color accent;
+  final bool compact;
+  final VoidCallback onResume;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppTheme.midnight,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: accent.withValues(alpha: 0.42), width: 2),
+        boxShadow: [
+          BoxShadow(
+            color: AppTheme.midnight.withValues(alpha: 0.18),
+            blurRadius: 24,
+            offset: const Offset(0, 14),
+          ),
+        ],
+      ),
+      child: Center(
+        child: Padding(
+          padding: EdgeInsets.all(compact ? 18 : 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: compact ? 54 : 62,
+                height: compact ? 54 : 62,
+                decoration: BoxDecoration(
+                  color: accent,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(
+                  Icons.pause_rounded,
+                  color: Colors.white,
+                  size: compact ? 30 : 34,
+                ),
+              ),
+              SizedBox(height: compact ? 12 : 16),
+              Text(
+                'Pausado',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w900,
+                  fontSize: compact ? 20 : 24,
+                  letterSpacing: 0,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'Tempo congelado',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.72),
+                  fontWeight: FontWeight.w700,
+                  fontSize: compact ? 12 : 13,
+                ),
+              ),
+              SizedBox(height: compact ? 14 : 18),
+              ElevatedButton.icon(
+                onPressed: onResume,
+                icon: const Icon(Icons.play_arrow_rounded, size: 20),
+                label: const Text('Continuar'),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -2251,16 +2397,50 @@ class _HeaderBackButton extends StatelessWidget {
   }
 }
 
+class _HeaderPauseButton extends StatelessWidget {
+  const _HeaderPauseButton({
+    required this.paused,
+    required this.onPressed,
+    required this.compact,
+  });
+
+  final bool paused;
+  final VoidCallback onPressed;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: paused ? 'Continuar' : 'Pausar',
+      child: Material(
+        color: Colors.white.withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(8),
+        child: InkWell(
+          onTap: onPressed,
+          borderRadius: BorderRadius.circular(8),
+          child: SizedBox(
+            width: compact ? 38 : 40,
+            height: compact ? 38 : 40,
+            child: Icon(
+              paused ? Icons.play_arrow_rounded : Icons.pause_rounded,
+              color: Colors.white,
+              size: compact ? 20 : 22,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _HeaderScorePill extends StatelessWidget {
   const _HeaderScorePill({
     required this.score,
-    required this.total,
     required this.fontSize,
     required this.compact,
   });
 
   final int score;
-  final int total;
   final double fontSize;
   final bool compact;
 
@@ -2280,7 +2460,7 @@ class _HeaderScorePill extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           Text(
-            '$score/$total',
+            '$score',
             style: TextStyle(
               color: Colors.white,
               fontWeight: FontWeight.w900,

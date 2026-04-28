@@ -13,11 +13,15 @@ class RankingEntry {
     required this.words,
     required this.elapsedSeconds,
     required this.completedAt,
+    this.errors = 0,
+    this.hintsUsed = 0,
   });
 
   factory RankingEntry.fromJson(Map<String, Object?> json) {
     final words = json['words'] as int? ?? 0;
     final elapsedSeconds = json['elapsedSeconds'] as int? ?? 0;
+    final errors = json['errors'] as int? ?? 0;
+    final hintsUsed = json['hintsUsed'] as int? ?? 0;
 
     return RankingEntry(
       initials: (json['initials'] as String? ?? '---').toUpperCase(),
@@ -25,12 +29,16 @@ class RankingEntry {
       score: RankingStore.scoreForPerformance(
         words: words,
         elapsedSeconds: elapsedSeconds,
+        errors: errors,
+        hintsUsed: hintsUsed,
       ),
       words: words,
       elapsedSeconds: elapsedSeconds,
       completedAt:
           DateTime.tryParse(json['completedAt'] as String? ?? '') ??
           DateTime.fromMillisecondsSinceEpoch(0),
+      errors: errors,
+      hintsUsed: hintsUsed,
     );
   }
 
@@ -40,6 +48,8 @@ class RankingEntry {
   final int words;
   final int elapsedSeconds;
   final DateTime completedAt;
+  final int errors;
+  final int hintsUsed;
 
   Map<String, Object?> toJson() {
     return <String, Object?>{
@@ -49,6 +59,8 @@ class RankingEntry {
       'words': words,
       'elapsedSeconds': elapsedSeconds,
       'completedAt': completedAt.toIso8601String(),
+      'errors': errors,
+      'hintsUsed': hintsUsed,
     };
   }
 }
@@ -72,6 +84,11 @@ class RankingStore {
   static const String _storageKey = 'ranking_entries_v1';
   static const String _lastInitialsKey = 'ranking_last_initials_v1';
   static const String _apiBaseUrl = String.fromEnvironment('RANKING_API_URL');
+  static const int startingScore = 1000;
+  static const int pointsPerWord = 30;
+  static const int pointsPerSecond = 1;
+  static const int pointsPerError = 50;
+  static const int pointsPerHint = 80;
 
   Future<List<RankingEntry>> loadEntries({GameLevel? level}) async {
     if (_apiBaseUrl.isNotEmpty) {
@@ -243,8 +260,17 @@ class RankingStore {
   static int scoreForPerformance({
     required int words,
     required int elapsedSeconds,
+    int errors = 0,
+    int hintsUsed = 0,
   }) {
-    return max(0, 1000 - (words * 30) - elapsedSeconds);
+    return max(
+      0,
+      startingScore -
+          (words * pointsPerWord) -
+          (elapsedSeconds * pointsPerSecond) -
+          (errors * pointsPerError) -
+          (hintsUsed * pointsPerHint),
+    );
   }
 
   static List<RankingEntry> _bestEntriesForLevel(List<RankingEntry> entries) {
@@ -258,10 +284,14 @@ class RankingStore {
           scoreForPerformance(
             words: b.words,
             elapsedSeconds: b.elapsedSeconds,
+            errors: b.errors,
+            hintsUsed: b.hintsUsed,
           ).compareTo(
             scoreForPerformance(
               words: a.words,
               elapsedSeconds: a.elapsedSeconds,
+              errors: a.errors,
+              hintsUsed: a.hintsUsed,
             ),
           );
       if (scoreComparison != 0) {

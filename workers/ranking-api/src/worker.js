@@ -1,8 +1,13 @@
-const LEVELS = new Set(["easy", "medium", "hard"]);
+const LEVELS = new Set(["easy", "medium", "hard", "pautaLivre"]);
 const MAX_ENTRIES = 10;
 const MAX_LOG_EVENTS = 8;
 const MAX_LOGS_PER_MINUTE = 30;
 const LOG_TTL_SECONDS = 60 * 60 * 24 * 30;
+const STARTING_SCORE = 1000;
+const POINTS_PER_WORD = 30;
+const POINTS_PER_SECOND = 1;
+const POINTS_PER_ERROR = 50;
+const POINTS_PER_HINT = 80;
 const CORS_HEADERS = {
   "access-control-allow-origin": "*",
   "access-control-allow-methods": "GET,POST,OPTIONS",
@@ -174,6 +179,8 @@ function normalizeEntry(entry) {
   const score = Number(entry?.score);
   const words = Number(entry?.words);
   const elapsedSeconds = Number(entry?.elapsedSeconds);
+  const errors = Number(entry?.errors ?? 0);
+  const hintsUsed = Number(entry?.hintsUsed ?? 0);
   const completedAt = new Date(entry?.completedAt ?? Date.now());
 
   if (!/^[A-Z]{3}$/.test(initials)) {
@@ -195,6 +202,12 @@ function normalizeEntry(entry) {
   ) {
     return null;
   }
+  if (!Number.isInteger(errors) || errors < 0 || errors > 100) {
+    return null;
+  }
+  if (!Number.isInteger(hintsUsed) || hintsUsed < 0 || hintsUsed > 100) {
+    return null;
+  }
   if (Number.isNaN(completedAt.valueOf())) {
     return null;
   }
@@ -202,15 +215,24 @@ function normalizeEntry(entry) {
   return {
     initials,
     level,
-    score: scoreForPerformance(words, elapsedSeconds),
+    score: scoreForPerformance(words, elapsedSeconds, errors, hintsUsed),
     words,
     elapsedSeconds,
+    errors,
+    hintsUsed,
     completedAt: completedAt.toISOString(),
   };
 }
 
-function scoreForPerformance(words, elapsedSeconds) {
-  return Math.max(0, 1000 - words * 30 - elapsedSeconds);
+function scoreForPerformance(words, elapsedSeconds, errors, hintsUsed) {
+  return Math.max(
+    0,
+    STARTING_SCORE -
+      words * POINTS_PER_WORD -
+      elapsedSeconds * POINTS_PER_SECOND -
+      errors * POINTS_PER_ERROR -
+      hintsUsed * POINTS_PER_HINT,
+  );
 }
 
 function sortEntries(entries) {

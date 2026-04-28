@@ -15,7 +15,7 @@ extension GameLevelDetails on GameLevel {
     GameLevel.easy => 'Palavras curtas e bem familiares',
     GameLevel.medium => 'Mistura equilibrada para ganhar ritmo',
     GameLevel.hard => 'Desafio com palavras maiores e tabuleiro amplo',
-    GameLevel.pautaLivre => 'Uma rodada progressiva com todos os níveis',
+    GameLevel.pautaLivre => 'Uma rodada aleatória com todos os níveis',
   };
 
   String get tag => switch (this) {
@@ -46,6 +46,13 @@ extension GameLevelDetails on GameLevel {
     GameLevel.pautaLivre => 8,
   };
 
+  int get targetWordCount => switch (this) {
+    GameLevel.easy => 10,
+    GameLevel.medium => 8,
+    GameLevel.hard => 6,
+    GameLevel.pautaLivre => 9,
+  };
+
   Color get accent => switch (this) {
     GameLevel.easy => AppTheme.mint,
     GameLevel.medium => AppTheme.electricBlue,
@@ -71,7 +78,7 @@ extension GameLevelDetails on GameLevel {
     GameLevel.easy => 'Cada acerto revela uma nova chamada.',
     GameLevel.medium => 'Monte palavras para fechar a manchete.',
     GameLevel.hard => 'Complete a página antes do fechamento.',
-    GameLevel.pautaLivre => 'A rodada começa leve e fecha em manchete forte.',
+    GameLevel.pautaLivre => 'A rodada mistura pautas leves e manchetes fortes.',
   };
 
   List<Color> get sceneGradient => switch (this) {
@@ -119,17 +126,18 @@ extension GameLevelDetails on GameLevel {
   };
 
   String get soundtrackAsset => switch (this) {
-    GameLevel.easy => 'audio/easy_loop.mp3',
-    GameLevel.medium => 'audio/medium_loop.mp3',
-    GameLevel.hard => 'audio/hard_loop.mp3',
-    GameLevel.pautaLivre => 'audio/medium_loop.mp3',
+    GameLevel.easy =>
+      'audio/bodleasons-lofi-chill-smooth-chill-lofi-for-vlogs-and-background-music-159456.mp3',
+    GameLevel.medium => 'audio/penguinmusic-better-day-186374.mp3',
+    GameLevel.hard => 'audio/comastudio-order-99518.mp3',
+    GameLevel.pautaLivre => 'audio/alisiabeats-titanium-170190.mp3',
   };
 
   double get soundtrackVolume => switch (this) {
-    GameLevel.easy => 0.24,
-    GameLevel.medium => 0.27,
-    GameLevel.hard => 0.3,
-    GameLevel.pautaLivre => 0.27,
+    GameLevel.easy => 0.32,
+    GameLevel.medium => 0.35,
+    GameLevel.hard => 0.38,
+    GameLevel.pautaLivre => 0.35,
   };
 
   bool get mixesAllLevels => this == GameLevel.pautaLivre;
