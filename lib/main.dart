@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:ui';
 
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:jogopalavras/src/app.dart';
 import 'package:jogopalavras/src/core/ads/ad_service.dart';
@@ -13,6 +14,9 @@ Future<void> main() async {
   await runZonedGuarded<Future<void>>(
     () async {
       WidgetsFlutterBinding.ensureInitialized();
+      await SystemChrome.setPreferredOrientations(const [
+        DeviceOrientation.portraitUp,
+      ]);
 
       final errorReporter = AppErrorReporter.instance;
       await errorReporter.initialize();

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:jogopalavras/src/app.dart';
 import 'package:jogopalavras/src/game/game_level.dart';
+import 'package:jogopalavras/src/screens/level_screen.dart';
 import 'package:jogopalavras/src/screens/ranking_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -22,9 +23,12 @@ void main() {
 
     expect(find.text('Mapa da edição'), findsOneWidget);
     expect(find.text('Pauta'), findsOneWidget);
-    expect(find.text('Plantão: Pauta Livre'), findsOneWidget);
+    expect(find.text('Pauta Livre'), findsOneWidget);
 
-    await tester.tap(find.byKey(const ValueKey<String>('stage_easy')));
+    final easyStage = find.byKey(const ValueKey<String>('stage_easy'));
+    await tester.ensureVisible(easyStage);
+    await tester.pumpAndSettle();
+    await tester.tap(easyStage);
     await tester.pumpAndSettle();
 
     expect(find.text('0/10 palavras'), findsOneWidget);
@@ -47,34 +51,51 @@ void main() {
     expect(find.text('0/8 palavras'), findsOneWidget);
   });
 
+  testWidgets('card de próxima pauta abre a fase atual', (tester) async {
+    SharedPreferences.setMockInitialValues({'intro_seen_v1': true});
+    tester.view.physicalSize = const Size(1080, 1920);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final routeRecorder = _RouteRecorder();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: const LevelScreen(),
+        navigatorObservers: [routeRecorder],
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.drag(find.byType(ListView), const Offset(0, 1200));
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('next_objective_banner')),
+    );
+
+    expect(routeRecorder.pushedRouteNames.last, '/game/easy');
+  });
+
   testWidgets('opções abre painel discreto', (tester) async {
     SharedPreferences.setMockInitialValues({'intro_seen_v1': true});
     await tester.pumpWidget(const WordMazeApp());
     await tester.pumpAndSettle();
 
-    await tester.tap(
-      find.byKey(const ValueKey<String>('app_options_button')),
-    );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 160));
+    await tester.tap(find.byKey(const ValueKey<String>('app_options_button')));
+    await tester.pumpAndSettle();
 
     expect(find.text('Música'), findsOneWidget);
     expect(find.text('Efeitos'), findsOneWidget);
     expect(find.byType(Slider), findsOneWidget);
   });
 
-  testWidgets('opções muta efeitos e salva preferência', (
-    tester,
-  ) async {
+  testWidgets('opções muta efeitos e salva preferência', (tester) async {
     SharedPreferences.setMockInitialValues({'intro_seen_v1': true});
     await tester.pumpWidget(const WordMazeApp());
     await tester.pumpAndSettle();
 
-    await tester.tap(
-      find.byKey(const ValueKey<String>('app_options_button')),
-    );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 160));
+    await tester.tap(find.byKey(const ValueKey<String>('app_options_button')));
+    await tester.pumpAndSettle();
 
     await tester.tap(find.text('Efeitos'));
     await tester.pumpAndSettle();
@@ -85,4 +106,14 @@ void main() {
     final preferences = await SharedPreferences.getInstance();
     expect(preferences.getBool('effects_enabled_v1'), isFalse);
   });
+}
+
+class _RouteRecorder extends NavigatorObserver {
+  final pushedRouteNames = <String?>[];
+
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    pushedRouteNames.add(route.settings.name);
+    super.didPush(route, previousRoute);
+  }
 }

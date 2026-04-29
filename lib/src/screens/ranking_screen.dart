@@ -13,6 +13,7 @@ class RankingScreen extends StatelessWidget {
   const RankingScreen({
     super.key,
     this.initialLevel,
+    this.initialStageNumber,
     this.highlightEntry,
     this.continueLevel,
     this.completedLevel,
@@ -20,6 +21,7 @@ class RankingScreen extends StatelessWidget {
   });
 
   final GameLevel? initialLevel;
+  final int? initialStageNumber;
   final RankingEntry? highlightEntry;
   final GameLevel? continueLevel;
   final GameLevel? completedLevel;
@@ -30,6 +32,41 @@ class RankingScreen extends StatelessWidget {
     final initialIndex = initialLevel == null
         ? 0
         : GameLevel.values.indexOf(initialLevel!);
+    final singleLevel =
+        initialStageNumber != null || initialLevel == GameLevel.pautaLivre;
+    final selectedLevel = initialLevel ?? GameLevel.easy;
+
+    if (singleLevel) {
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text(
+            'Ranking',
+            style: TextStyle(fontWeight: FontWeight.w900),
+          ),
+          actions: const [AppOptionsControl()],
+        ),
+        bottomNavigationBar: const AdBannerSlot(
+          adSize: AdSize.largeBanner,
+          safeAreaMinimum: EdgeInsets.fromLTRB(18, 0, 18, 12),
+        ),
+        body: AppBackdrop(
+          primary: AppTheme.pressBlue,
+          secondary: AppTheme.pressRed,
+          showOptionsControl: false,
+          child: SafeArea(
+            top: false,
+            child: _RankingLevelView(
+              level: selectedLevel,
+              stageNumber: highlightEntry?.stageNumber ?? initialStageNumber,
+              highlightEntry: highlightEntry,
+              continueLevel: continueLevel,
+              completedLevel: completedLevel,
+              completedGame: completedGame,
+            ),
+          ),
+        ),
+      );
+    }
 
     return DefaultTabController(
       length: GameLevel.values.length,
@@ -64,6 +101,9 @@ class RankingScreen extends StatelessWidget {
                 for (final level in GameLevel.values)
                   _RankingLevelView(
                     level: level,
+                    stageNumber: highlightEntry?.level == level
+                        ? highlightEntry!.stageNumber
+                        : initialStageNumber,
                     highlightEntry: highlightEntry?.level == level
                         ? highlightEntry
                         : null,
@@ -88,6 +128,7 @@ class RankingScreen extends StatelessWidget {
 class _RankingLevelView extends StatefulWidget {
   const _RankingLevelView({
     required this.level,
+    this.stageNumber,
     this.highlightEntry,
     this.continueLevel,
     this.completedLevel,
@@ -95,6 +136,7 @@ class _RankingLevelView extends StatefulWidget {
   });
 
   final GameLevel level;
+  final int? stageNumber;
   final RankingEntry? highlightEntry;
   final GameLevel? continueLevel;
   final GameLevel? completedLevel;
@@ -114,7 +156,10 @@ class _RankingLevelViewState extends State<_RankingLevelView> {
   }
 
   Future<List<RankingEntry>> _loadEntries() {
-    return RankingStore.instance.loadEntries(level: widget.level);
+    return RankingStore.instance.loadEntries(
+      level: widget.level,
+      stageNumber: widget.stageNumber,
+    );
   }
 
   Future<void> _refreshEntries() async {
@@ -148,6 +193,7 @@ class _RankingLevelViewState extends State<_RankingLevelView> {
               RevealOnMount(
                 child: _RankingHeader(
                   level: widget.level,
+                  stageNumber: widget.stageNumber,
                   highlightEntry: widget.highlightEntry,
                   highlightPosition: highlightPosition,
                   continueLevel: widget.continueLevel,
@@ -190,6 +236,7 @@ class _RankingLevelViewState extends State<_RankingLevelView> {
 class _RankingHeader extends StatelessWidget {
   const _RankingHeader({
     required this.level,
+    this.stageNumber,
     this.highlightEntry,
     this.highlightPosition = 0,
     this.continueLevel,
@@ -199,6 +246,7 @@ class _RankingHeader extends StatelessWidget {
   });
 
   final GameLevel level;
+  final int? stageNumber;
   final RankingEntry? highlightEntry;
   final int highlightPosition;
   final GameLevel? continueLevel;
@@ -209,7 +257,9 @@ class _RankingHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final resultText = highlightEntry == null
-        ? 'Pontuação por eficiência: menos palavras e menor tempo.'
+        ? level == GameLevel.pautaLivre && stageNumber == null
+              ? 'Ranking geral do plantão: menos palavras e menor tempo.'
+              : 'Pontuação por eficiência: menos palavras e menor tempo.'
         : isLoading
         ? 'Calculando sua posição nesta fase...'
         : highlightPosition > 0
@@ -260,7 +310,11 @@ class _RankingHeader extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Melhores em ${level.title.toLowerCase()}',
+                      stageNumber != null && stageNumber! > 0
+                          ? 'Melhores da fase $stageNumber'
+                          : level == GameLevel.pautaLivre
+                          ? 'Melhores do Plantão'
+                          : 'Melhores em ${level.title.toLowerCase()}',
                       style: Theme.of(context).textTheme.titleLarge?.copyWith(
                         color: Colors.white,
                         fontWeight: FontWeight.w900,
@@ -291,19 +345,31 @@ class _RankingHeader extends StatelessWidget {
                         ),
                         onPressed: () {
                           final nextLevel = continueLevel ?? level;
+                          final replaySelectedStage =
+                              highlightEntry == null &&
+                              stageNumber != null &&
+                              stageNumber! > 0;
                           Navigator.of(context).pushReplacement(
                             appPageRoute<void>(
                               settings: RouteSettings(
                                 name: '/game/${nextLevel.name}',
                               ),
-                              builder: (_) => GameScreen(level: nextLevel),
+                              builder: (_) => GameScreen(
+                                level: nextLevel,
+                                stageNumber: replaySelectedStage
+                                    ? stageNumber
+                                    : null,
+                                replayStage: replaySelectedStage,
+                              ),
                             ),
                           );
                         },
                         icon: const Icon(Icons.play_arrow_rounded, size: 20),
                         label: Text(
                           highlightEntry == null
-                              ? 'Jogar no ${level.title.toLowerCase()}'
+                              ? stageNumber != null && stageNumber! > 0
+                                    ? 'Jogar fase $stageNumber'
+                                    : 'Jogar no ${level.title.toLowerCase()}'
                               : continueLevel == null || continueLevel == level
                               ? 'Continuar fase'
                               : 'Continuar no ${continueLevel!.title.toLowerCase()}',
@@ -603,7 +669,7 @@ class _EmptyRanking extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           Text(
-            'Complete uma rodada e registre de 3 a 5 letras para aparecer aqui.',
+            'Complete esta fase e registre de 3 a 5 letras para aparecer aqui.',
             textAlign: TextAlign.center,
             style: TextStyle(
               color: AppTheme.ink.withValues(alpha: 0.72),
@@ -624,6 +690,7 @@ bool _sameRankingEntry(RankingEntry a, RankingEntry b) {
 
   return a.initials == b.initials &&
       a.level == b.level &&
+      a.stageNumber == b.stageNumber &&
       a.score == b.score &&
       a.words == b.words &&
       a.elapsedSeconds == b.elapsedSeconds &&

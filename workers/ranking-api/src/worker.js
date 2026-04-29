@@ -78,12 +78,19 @@ export default {
 
 async function handleGet(url, env) {
   const level = url.searchParams.get("level");
+  const stageNumber = normalizeStageNumber(url.searchParams.get("stage"));
   if (level && !LEVELS.has(level)) {
     return json({ error: "invalid_level" }, 400);
   }
+  if (url.searchParams.has("stage") && !stageNumber) {
+    return json({ error: "invalid_stage" }, 400);
+  }
+  if (stageNumber && !level) {
+    return json({ error: "level_required" }, 400);
+  }
 
   const entries = level
-    ? await readLevel(env, level)
+    ? await readLevel(env, level, stageNumber)
     : (await Promise.all([...LEVELS].map((item) => readLevel(env, item)))).flat();
 
   return json({ entries: sortEntries(entries).slice(0, MAX_ENTRIES) });
@@ -103,10 +110,13 @@ async function handlePost(request, env) {
   }
 
   await reserveLegacyInitials(env, [entry]);
-  const entries = await readLevel(env, entry.level);
+  const entries = await readLevel(env, entry.level, entry.stageNumber);
   entries.push(entry);
   const ranking = sortEntries(entries).slice(0, MAX_ENTRIES);
-  await env.RANKING_KV.put(keyFor(entry.level), JSON.stringify(ranking));
+  await env.RANKING_KV.put(
+    keyFor(entry.level, entry.stageNumber),
+    JSON.stringify(ranking),
+  );
 
   return json({ entries: ranking }, 201);
 }
@@ -246,8 +256,25 @@ async function handleLogPost(request, env) {
   return json({ ok: true, accepted: events.length }, 202);
 }
 
-async function readLevel(env, level) {
-  const rawEntries = await env.RANKING_KV.get(keyFor(level), "json");
+async function readLevel(env, level, stageNumber = 0) {
+  if (stageNumber > 0) {
+    return readBucket(env, keyFor(level, stageNumber));
+  }
+
+  const legacyEntries = await readBucket(env, keyFor(level));
+  const listed = await env.RANKING_KV.list({
+    prefix: `ranking:v2:${level}:`,
+    limit: 100,
+  });
+  const stageEntries = (
+    await Promise.all(listed.keys.map((item) => readBucket(env, item.name)))
+  ).flat();
+
+  return [...legacyEntries, ...stageEntries];
+}
+
+async function readBucket(env, key) {
+  const rawEntries = await env.RANKING_KV.get(key, "json");
   return Array.isArray(rawEntries)
     ? rawEntries.map(normalizeEntry).filter(Boolean)
     : [];
@@ -256,6 +283,9 @@ async function readLevel(env, level) {
 function normalizeEntry(entry) {
   const initials = normalizeInitials(entry?.initials);
   const level = String(entry?.level ?? "");
+  const stageNumber = normalizeStageNumber(
+    entry?.stageNumber ?? entry?.stage,
+  );
   const score = Number(entry?.score);
   const words = Number(entry?.words);
   const elapsedSeconds = Number(entry?.elapsedSeconds);
@@ -317,6 +347,7 @@ function normalizeEntry(entry) {
     hintsUsed,
     skipsUsed,
     completedAt: completedAt.toISOString(),
+    stageNumber,
   };
 }
 
@@ -358,8 +389,10 @@ function sortEntries(entries) {
   });
 }
 
-function keyFor(level) {
-  return `ranking:v1:${level}`;
+function keyFor(level, stageNumber = 0) {
+  return stageNumber > 0
+    ? `ranking:v2:${level}:${stageNumber}`
+    : `ranking:v1:${level}`;
 }
 
 function playerKeyFor(initials) {
@@ -426,6 +459,17 @@ async function isInitialsAvailable(
 function normalizeInitials(value) {
   const initials = String(value ?? "").trim().toUpperCase();
   return /^[A-Z]{3,5}$/.test(initials) ? initials : "";
+}
+
+function normalizeStageNumber(value) {
+  if (value === undefined || value === null || value === "") {
+    return 0;
+  }
+
+  const stageNumber = Number(value);
+  return Number.isInteger(stageNumber) && stageNumber > 0 && stageNumber <= 999
+    ? stageNumber
+    : 0;
 }
 
 function normalizeOwnerId(value) {

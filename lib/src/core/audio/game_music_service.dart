@@ -38,9 +38,10 @@ class GameMusicService {
     'audio/penguinmusic-penguinmusic-modern-chillout-future-calm-12641.mp3',
     'audio/romanbelov-spirit-blossom-15285.mp3',
   ];
-  static const String _wordVictoryAsset = 'audio/word_victory.mp3';
+  static const String _wordVictoryKeyAsset = 'audio/typewriter_key.wav';
   static const String _endOfGameAsset = 'audio/endofgame.mp3';
-  static const double _musicOutputGain = 1.9;
+  static const double _effectsOutputVolume = 1;
+  static const double _maxMusicVolume = _effectsOutputVolume * 0.5;
 
   bool get enabled => _enabled;
   bool get effectsEnabled => _effectsEnabled;
@@ -87,10 +88,10 @@ class GameMusicService {
       await _wordVictoryPlayer.setReleaseMode(ReleaseMode.stop);
       await _wordVictoryPlayer.setPlayerMode(PlayerMode.lowLatency);
       await _wordVictoryPlayer.setAudioContext(mixContext);
-      await _wordVictoryPlayer.setVolume(0.75);
+      await _wordVictoryPlayer.setVolume(_effectsOutputVolume);
       await _endOfGamePlayer.setReleaseMode(ReleaseMode.stop);
       await _endOfGamePlayer.setAudioContext(mixContext);
-      await _endOfGamePlayer.setVolume(0.9);
+      await _endOfGamePlayer.setVolume(_effectsOutputVolume);
       _playerCompleteSubscription = _player.onPlayerComplete.listen((_) {
         unawaited(_playNextTrack());
       });
@@ -269,7 +270,7 @@ class GameMusicService {
   }
 
   Future<void> playWordVictory() async {
-    await _playEffect(_wordVictoryPlayer, _wordVictoryAsset);
+    await _playEffect(_wordVictoryPlayer, _wordVictoryKeyAsset);
   }
 
   void clearGamePause() {
@@ -316,10 +317,7 @@ class GameMusicService {
   }
 
   Future<void> _applyMusicVolume() async {
-    final levelVolume = _currentLevel?.soundtrackVolume ?? 0.42;
-    await _player.setVolume(
-      (levelVolume * _musicOutputGain * _volume).clamp(0.0, 1.0),
-    );
+    await _player.setVolume((_maxMusicVolume * _volume).clamp(0.0, 1.0));
   }
 
   Future<void> _playEffect(AudioPlayer player, String asset) async {

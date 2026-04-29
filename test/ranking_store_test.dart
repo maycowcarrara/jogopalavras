@@ -179,6 +179,46 @@ void main() {
     expect(await RankingStore.instance.loadLastInitials(), 'MAYCO');
   });
 
+  test('mantem rankings locais separados por fase', () async {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+    final now = DateTime(2026, 4, 28);
+
+    await RankingStore.instance.saveEntry(
+      RankingEntry(
+        initials: 'AAA',
+        level: GameLevel.easy,
+        stageNumber: 1,
+        score: 150,
+        words: 10,
+        elapsedSeconds: 90,
+        completedAt: now,
+      ),
+    );
+    await RankingStore.instance.saveEntry(
+      RankingEntry(
+        initials: 'BBB',
+        level: GameLevel.easy,
+        stageNumber: 2,
+        score: 150,
+        words: 10,
+        elapsedSeconds: 80,
+        completedAt: now,
+      ),
+    );
+
+    final firstStage = await RankingStore.instance.loadEntries(
+      level: GameLevel.easy,
+      stageNumber: 1,
+    );
+    final secondStage = await RankingStore.instance.loadEntries(
+      level: GameLevel.easy,
+      stageNumber: 2,
+    );
+
+    expect(firstStage.map((entry) => entry.initials), orderedEquals(['AAA']));
+    expect(secondStage.map((entry) => entry.initials), orderedEquals(['BBB']));
+  });
+
   test('bloqueia troca de assinatura por trinta dias', () async {
     SharedPreferences.setMockInitialValues(<String, Object>{});
 

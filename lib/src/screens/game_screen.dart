@@ -18,9 +18,16 @@ import 'package:jogopalavras/src/widgets/app_backdrop.dart';
 import 'package:jogopalavras/src/widgets/reveal_on_mount.dart';
 
 class GameScreen extends StatefulWidget {
-  const GameScreen({super.key, required this.level});
+  const GameScreen({
+    super.key,
+    required this.level,
+    this.stageNumber,
+    this.replayStage = false,
+  });
 
   final GameLevel level;
+  final int? stageNumber;
+  final bool replayStage;
 
   @override
   State<GameScreen> createState() => _GameScreenState();
@@ -136,6 +143,72 @@ class _InitialsDialogState extends State<_InitialsDialog> {
   }
 }
 
+int _stageNumberForUsedWords({
+  required GameLevel level,
+  required int usedWords,
+}) {
+  final totalWords = wordBank[level]?.length ?? 0;
+  if (totalWords == 0) {
+    return 0;
+  }
+
+  final stageCount = (totalWords / level.targetWordCount).ceil();
+  final nextStage = (usedWords / level.targetWordCount).floor() + 1;
+  return nextStage.clamp(1, stageCount).toInt();
+}
+
+int _targetWordCountForStage({
+  required GameLevel level,
+  required int stageNumber,
+}) {
+  if (stageNumber <= 0 || level.mixesAllLevels) {
+    return level.targetWordCount;
+  }
+
+  final totalWords = wordBank[level]?.length ?? 0;
+  if (totalWords == 0) {
+    return level.targetWordCount;
+  }
+
+  final wordsBeforeStage = (stageNumber - 1) * level.targetWordCount;
+  final remainingWords = max(1, totalWords - wordsBeforeStage);
+  return min(level.targetWordCount, remainingWords);
+}
+
+int _stageCountForLevel(GameLevel level) {
+  if (level.mixesAllLevels) {
+    return 0;
+  }
+
+  final totalWords = wordBank[level]?.length ?? 0;
+  if (totalWords == 0) {
+    return 0;
+  }
+
+  return (totalWords / level.targetWordCount).ceil();
+}
+
+String _chapterTitleForLevel(GameLevel level) => switch (level) {
+  GameLevel.easy => 'Pauta',
+  GameLevel.medium => 'Redação',
+  GameLevel.hard => 'Fechamento',
+  GameLevel.pautaLivre => 'Pauta Livre',
+};
+
+String _subStageLabelForLevel(GameLevel level) => switch (level) {
+  GameLevel.easy => 'Página',
+  GameLevel.medium => 'Matéria',
+  GameLevel.hard => 'Prova',
+  GameLevel.pautaLivre => 'Rodada',
+};
+
+String _editionLabelForLevel(GameLevel level) => switch (level) {
+  GameLevel.easy => 'Edição 01',
+  GameLevel.medium => 'Edição 02',
+  GameLevel.hard => 'Edição 03',
+  GameLevel.pautaLivre => 'Plantão',
+};
+
 class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   static const int _pointsPerSkip = RankingStore.pointsPerSkip;
   static const Duration _typewriterTick = Duration(milliseconds: 78);
@@ -159,6 +232,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   int _skipsUsed = 0;
   int _elapsedSeconds = 0;
   int _roundTargetWordCount = 1;
+  int _roundStageNumber = 0;
   bool _hasError = false;
   bool _isPreparingRound = true;
   bool _isHitCelebrating = false;
@@ -183,7 +257,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _prepareGame() async {
-    if (_tracksCampaignWords) {
+    if (_recordsCampaignProgress) {
       final usedWords = await WordProgressStore.instance.loadUsedWords(
         widget.level,
       );
@@ -194,12 +268,20 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       }
 
       _usedWordsByLevel[widget.level] = usedWords;
+      _roundStageNumber = _stageNumberForUsedWords(
+        level: widget.level,
+        usedWords: usedWords.length,
+      );
       _roundTargetWordCount = min(
         widget.level.targetWordCount,
         max(1, totalWords - usedWords.length),
       );
     } else {
-      _roundTargetWordCount = widget.level.targetWordCount;
+      _roundStageNumber = widget.stageNumber ?? 0;
+      _roundTargetWordCount = _targetWordCountForStage(
+        level: widget.level,
+        stageNumber: _roundStageNumber,
+      );
     }
 
     if (!mounted) {
@@ -330,8 +412,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     final usedWords = _usedWordsByLevel[sourceLevel] ?? const <String>{};
 
     bool isFreshCandidate(WordEntry entry) =>
-        !_sessionWords.contains(entry.text) &&
-        !usedWords.contains(entry.text);
+        !_sessionWords.contains(entry.text) && !usedWords.contains(entry.text);
 
     if (_hasWordCandidate(sourceLevel, isFreshCandidate)) {
       return _wordDecks[sourceLevel]!.nextWhere(isFreshCandidate);
@@ -359,14 +440,12 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     );
   }
 
-  bool _hasWordCandidate(
-    GameLevel level,
-    bool Function(WordEntry entry) test,
-  ) {
+  bool _hasWordCandidate(GameLevel level, bool Function(WordEntry entry) test) {
     return wordBank[level]!.any(test);
   }
 
-  bool get _tracksCampaignWords => !widget.level.mixesAllLevels;
+  bool get _recordsCampaignProgress =>
+      !widget.level.mixesAllLevels && !widget.replayStage;
 
   GameLevel _sourceLevelForNextWord() {
     if (!widget.level.mixesAllLevels) {
@@ -508,7 +587,6 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
         _typedHitWord = '';
       });
 
-      await GameMusicService.instance.playWordVictory();
       await _playHitCelebration(completedWord);
       if (!mounted) {
         return;
@@ -525,7 +603,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
         GameLevel? continueLevel = widget.level;
         GameLevel? completedLevel;
         var completedGame = false;
-        if (_tracksCampaignWords) {
+        if (_recordsCampaignProgress) {
           final usedWords = await WordProgressStore.instance.markWordsUsed(
             widget.level,
             _discoveredWords,
@@ -553,9 +631,14 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
 
         await Navigator.of(context).pushReplacement(
           appPageRoute<void>(
-            settings: const RouteSettings(name: '/ranking'),
+            settings: RouteSettings(
+              name: '/ranking/${widget.level.name}/${entry.stageNumber}',
+            ),
             builder: (_) => RankingScreen(
               initialLevel: widget.level,
+              initialStageNumber: entry.stageNumber > 0
+                  ? entry.stageNumber
+                  : null,
               highlightEntry: entry,
               continueLevel: continueLevel,
               completedLevel: completedLevel,
@@ -588,6 +671,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       setState(() {
         _typedHitWord = word.substring(0, i);
       });
+      unawaited(GameMusicService.instance.playWordVictory());
     }
 
     await Future<void>.delayed(_hitCelebrationHold);
@@ -605,6 +689,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     final completedEntry = RankingEntry(
       initials: '',
       level: widget.level,
+      stageNumber: _roundStageNumber,
       score: finalScore,
       words: _discoveredWords.length,
       elapsedSeconds: _elapsedSeconds,
@@ -651,6 +736,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     return RankingEntry(
       initials: initials,
       level: completedEntry.level,
+      stageNumber: completedEntry.stageNumber,
       score: completedEntry.score,
       words: completedEntry.words,
       elapsedSeconds: completedEntry.elapsedSeconds,
@@ -782,6 +868,11 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                           RevealOnMount(
                             child: _LevelIdentityBar(
                               level: widget.level,
+                              stageNumber: _roundStageNumber,
+                              stageCount: _stageCountForLevel(widget.level),
+                              targetWordCount: targetWordCount,
+                              discoveredCount: _discoveredWords.length,
+                              replayStage: widget.replayStage,
                               compact: layout.compact,
                             ),
                           ),
@@ -815,6 +906,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                                       child: SizedBox(
                                         height: panelHeight,
                                         child: _RoundScenePanel(
+                                          level: widget.level,
                                           currentWord: _currentWord,
                                           targetWordLength: _targetWord.length,
                                           hasError: _hasError,
@@ -899,6 +991,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                                       child: SizedBox(
                                         height: actionHeight,
                                         child: _RoundActionPanel(
+                                          level: widget.level,
                                           hint: _currentHint,
                                           skipPenalty: _pointsPerSkip,
                                           compact: layout.compact,
@@ -926,53 +1019,156 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
 }
 
 class _LevelIdentityBar extends StatelessWidget {
-  const _LevelIdentityBar({required this.level, required this.compact});
+  const _LevelIdentityBar({
+    required this.level,
+    required this.stageNumber,
+    required this.stageCount,
+    required this.targetWordCount,
+    required this.discoveredCount,
+    required this.replayStage,
+    required this.compact,
+  });
 
   final GameLevel level;
+  final int stageNumber;
+  final int stageCount;
+  final int targetWordCount;
+  final int discoveredCount;
+  final bool replayStage;
   final bool compact;
 
   @override
   Widget build(BuildContext context) {
-    final iconSize = compact ? 34.0 : 38.0;
+    final iconSize = compact ? 34.0 : 42.0;
+    final chapterTitle = _chapterTitleForLevel(level);
+    final stageLabel = level.mixesAllLevels || stageNumber <= 0
+        ? 'Rodada solta'
+        : '${_subStageLabelForLevel(level)} $stageNumber/$stageCount';
+    final subtitle = replayStage
+        ? 'Revisão do arquivo • $targetWordCount palavras'
+        : '$stageLabel • $discoveredCount/$targetWordCount palavras';
 
-    return Padding(
-      padding: EdgeInsets.symmetric(horizontal: compact ? 2 : 4),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Container(
-            width: iconSize,
-            height: iconSize,
-            decoration: BoxDecoration(
+    return Material(
+      color: AppTheme.card.withValues(alpha: 0.96),
+      borderRadius: BorderRadius.circular(10),
+      elevation: 6,
+      shadowColor: AppTheme.midnight.withValues(alpha: 0.12),
+      child: Container(
+        padding: EdgeInsets.fromLTRB(
+          compact ? 8 : 12,
+          compact ? 6 : 10,
+          compact ? 8 : 12,
+          compact ? 6 : 10,
+        ),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: AppTheme.rule.withValues(alpha: 0.72)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: iconSize,
+              height: iconSize,
+              decoration: BoxDecoration(
+                color: level.accent,
+                borderRadius: BorderRadius.circular(9),
+                boxShadow: [
+                  BoxShadow(
+                    color: level.accent.withValues(alpha: 0.28),
+                    blurRadius: 12,
+                    offset: const Offset(0, 5),
+                  ),
+                ],
+              ),
+              child: Icon(
+                level.icon,
+                color: Colors.white,
+                size: compact ? 18 : 23,
+              ),
+            ),
+            SizedBox(width: compact ? 8 : 11),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (!compact) ...[
+                    Text(
+                      _editionLabelForLevel(level),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: AppTheme.ink.withValues(alpha: 0.56),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w900,
+                        height: 1,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                  ],
+                  Text(
+                    chapterTitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: AppTheme.midnight,
+                      fontWeight: FontWeight.w900,
+                      fontSize: compact ? 17 : 23,
+                      height: 1,
+                      letterSpacing: 0,
+                    ),
+                  ),
+                  SizedBox(height: compact ? 3 : 5),
+                  Text(
+                    subtitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: AppTheme.ink.withValues(alpha: 0.72),
+                      fontSize: compact ? 10.5 : 12.5,
+                      fontWeight: FontWeight.w800,
+                      height: 1,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            _TinyPressBadge(
+              label: level.mixesAllLevels ? level.wordSizeShortLabel : level.tag,
               color: level.accent,
-              borderRadius: BorderRadius.circular(9),
-              boxShadow: [
-                BoxShadow(
-                  color: level.accent.withValues(alpha: 0.28),
-                  blurRadius: 12,
-                  offset: const Offset(0, 5),
-                ),
-              ],
             ),
-            child: Icon(
-              level.icon,
-              color: Colors.white,
-              size: compact ? 19 : 21,
-            ),
-          ),
-          const SizedBox(width: 9),
-          Text(
-            level.title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: AppTheme.midnight,
-              fontWeight: FontWeight.w900,
-              fontSize: compact ? 20 : 22,
-              letterSpacing: 0,
-            ),
-          ),
-        ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _TinyPressBadge extends StatelessWidget {
+  const _TinyPressBadge({required this.label, required this.color});
+
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withValues(alpha: 0.36)),
+      ),
+      child: Text(
+        label,
+        maxLines: 1,
+        style: TextStyle(
+          color: color,
+          fontSize: 10.5,
+          fontWeight: FontWeight.w900,
+          height: 1,
+        ),
       ),
     );
   }
@@ -1072,6 +1268,7 @@ class _GameHeader extends StatelessWidget {
 
 class _RoundScenePanel extends StatelessWidget {
   const _RoundScenePanel({
+    required this.level,
     required this.currentWord,
     required this.targetWordLength,
     required this.hasError,
@@ -1082,6 +1279,7 @@ class _RoundScenePanel extends StatelessWidget {
     required this.compact,
   });
 
+  final GameLevel level;
   final String currentWord;
   final int targetWordLength;
   final bool hasError;
@@ -1115,7 +1313,7 @@ class _RoundScenePanel extends StatelessWidget {
             border: Border.all(
               color: isHitCelebrating
                   ? AppTheme.pressGold.withValues(alpha: 0.72)
-                  : Colors.white.withValues(alpha: 0.08),
+                  : level.accent.withValues(alpha: 0.32),
             ),
             boxShadow: [
               BoxShadow(
@@ -1129,36 +1327,96 @@ class _RoundScenePanel extends StatelessWidget {
           ),
           child: LayoutBuilder(
             builder: (context, constraints) {
-              return Row(
+              final availableTextWidth = max(80.0, constraints.maxWidth - 18);
+              final tightHeight = constraints.maxHeight < 88;
+              final maxWordFont = compact ? 22.0 : 27.0;
+              final fittedWordFont = min(
+                maxWordFont,
+                availableTextWidth / max(1, typingText.length) * 1.7,
+              ).clamp(15.0, maxWordFont);
+
+              return Column(
+                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Expanded(
-                    child: AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 180),
-                      child: Text(
-                        typingText,
-                        key: ValueKey<String>(
-                          '$typingText-$targetWordCount-$isHitCelebrating',
+                  if (!tightHeight) ...[
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.title_rounded,
+                          color: level.accent.withValues(alpha: 0.95),
+                          size: compact ? 16 : 17,
                         ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: isHitCelebrating
-                              ? AppTheme.pressGold
-                              : hasError
-                              ? AppTheme.pressRed
-                              : Colors.white,
-                          fontWeight: FontWeight.w900,
-                          fontSize: compact ? 23 : 25,
-                          letterSpacing: 0,
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            'Manchete oculta',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.68),
+                              fontSize: compact ? 10.5 : 11.5,
+                              fontWeight: FontWeight.w900,
+                              height: 1,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        _ScoreChip(
+                          progressText: progressText,
+                          compact: compact,
+                          dark: true,
+                        ),
+                      ],
+                    ),
+                    SizedBox(height: compact ? 6 : 8),
+                  ] else
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: _ScoreChip(
+                        progressText: progressText,
+                        compact: true,
+                        dark: true,
+                      ),
+                    ),
+                  AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 180),
+                    child: SizedBox(
+                      key: ValueKey<String>(
+                        '$typingText-$targetWordCount-$isHitCelebrating',
+                      ),
+                      width: double.infinity,
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text(
+                          typingText,
+                          maxLines: 1,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: isHitCelebrating
+                                ? AppTheme.pressGold
+                                : hasError
+                                ? AppTheme.pressRed
+                                : Colors.white,
+                            fontWeight: FontWeight.w900,
+                            fontSize: fittedWordFont.toDouble(),
+                            letterSpacing: 0,
+                            height: 1,
+                          ),
                         ),
                       ),
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  _ScoreChip(
-                    progressText: progressText,
-                    compact: compact,
-                    dark: true,
+                  SizedBox(height: tightHeight ? 5 : compact ? 6 : 8),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(999),
+                    child: LinearProgressIndicator(
+                      value: targetWordCount == 0
+                          ? 0
+                          : discoveredCount / targetWordCount,
+                      minHeight: compact ? 4 : 5,
+                      backgroundColor: Colors.white.withValues(alpha: 0.12),
+                      valueColor: AlwaysStoppedAnimation<Color>(level.accent),
+                    ),
                   ),
                 ],
               );
@@ -1173,12 +1431,14 @@ class _RoundScenePanel extends StatelessWidget {
 
 class _RoundActionPanel extends StatelessWidget {
   const _RoundActionPanel({
+    required this.level,
     required this.hint,
     required this.skipPenalty,
     required this.compact,
     required this.onSkipWord,
   });
 
+  final GameLevel level;
   final String hint;
   final int skipPenalty;
   final bool compact;
@@ -1192,14 +1452,7 @@ class _RoundActionPanel extends StatelessWidget {
         vertical: compact ? 10 : 12,
       ),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            AppTheme.card.withValues(alpha: 0.98),
-            AppTheme.newsprint.withValues(alpha: 0.9),
-          ],
-        ),
+        color: AppTheme.card.withValues(alpha: 0.97),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: AppTheme.rule.withValues(alpha: 0.72)),
         boxShadow: [
@@ -1210,21 +1463,55 @@ class _RoundActionPanel extends StatelessWidget {
           ),
         ],
       ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _HintPanel(hint: hint, compact: compact),
-          SizedBox(height: compact ? 8 : 10),
-          _SkipWordButton(
-            penalty: skipPenalty,
-            dense: compact,
-            compact: compact,
-            onPressed: onSkipWord,
-          ),
-        ],
+      child: CustomPaint(
+        painter: _ActionPanelNewsPainter(accent: level.accent),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _HintPanel(hint: hint, compact: compact, accent: level.accent),
+            SizedBox(height: compact ? 8 : 10),
+            _SkipWordButton(
+              penalty: skipPenalty,
+              dense: compact,
+              compact: compact,
+              onPressed: onSkipWord,
+            ),
+          ],
+        ),
       ),
     );
+  }
+}
+
+class _ActionPanelNewsPainter extends CustomPainter {
+  const _ActionPanelNewsPainter({required this.accent});
+
+  final Color accent;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final rulePaint = Paint()
+      ..color = AppTheme.midnight.withValues(alpha: 0.035)
+      ..strokeWidth = 1;
+    final accentPaint = Paint()
+      ..color = accent.withValues(alpha: 0.08)
+      ..strokeWidth = 2;
+
+    for (var y = 18.0; y < size.height; y += 22) {
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), rulePaint);
+    }
+
+    canvas.drawLine(
+      Offset(0, size.height * 0.5),
+      Offset(size.width, size.height * 0.5),
+      accentPaint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _ActionPanelNewsPainter oldDelegate) {
+    return oldDelegate.accent != accent;
   }
 }
 
@@ -1334,10 +1621,15 @@ class _ScoreChip extends StatelessWidget {
 }
 
 class _HintPanel extends StatelessWidget {
-  const _HintPanel({required this.hint, required this.compact});
+  const _HintPanel({
+    required this.hint,
+    required this.compact,
+    required this.accent,
+  });
 
   final String hint;
   final bool compact;
+  final Color accent;
 
   @override
   Widget build(BuildContext context) {
@@ -1349,22 +1641,22 @@ class _HintPanel extends StatelessWidget {
           vertical: compact ? 9 : 10,
         ),
         decoration: BoxDecoration(
-          color: AppTheme.pressBlue.withValues(alpha: 0.1),
+          color: accent.withValues(alpha: 0.1),
           borderRadius: BorderRadius.circular(9),
-          border: Border.all(color: AppTheme.pressBlue.withValues(alpha: 0.34)),
+          border: Border.all(color: accent.withValues(alpha: 0.34)),
         ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Icon(
-              Icons.lightbulb_outline_rounded,
-              color: AppTheme.pressBlue,
+              Icons.article_outlined,
+              color: accent,
               size: compact ? 16 : 17,
             ),
             const SizedBox(width: 6),
             Expanded(
               child: Text(
-                'Dica: $hint',
+                'Nota da redação: $hint',
                 maxLines: compact ? 2 : 3,
                 overflow: TextOverflow.visible,
                 style: TextStyle(
@@ -1789,7 +2081,7 @@ class _GameLayoutMetrics {
       bottomPadding: veryCompact ? 8.0 : 14.0,
       identityGap: veryCompact ? 5.0 : 6.0,
       sectionGap: prioritizeBoard
-          ? 6.0
+          ? 5.0
           : veryCompact
           ? 8.0
           : compact
@@ -1798,11 +2090,11 @@ class _GameLayoutMetrics {
       contentGap: veryCompact ? 6.0 : 7.0,
       minPanelHeight: prioritizeBoard
           ? veryCompact
-                ? 56.0
-                : 62.0
+                ? 84.0
+                : 88.0
           : compact
-          ? 64.0
-          : 70.0,
+          ? 88.0
+          : 92.0,
       actionPanelHeight: veryCompact
           ? 130.0
           : compact

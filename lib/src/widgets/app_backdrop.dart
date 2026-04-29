@@ -182,11 +182,6 @@ class AppOptionsButton extends StatelessWidget {
   }
 
   Future<void> _showPanel(BuildContext context) async {
-    await onSync?.call();
-    if (!context.mounted) {
-      return;
-    }
-
     await showDialog<void>(
       context: context,
       builder: (_) => _OptionsDialog(

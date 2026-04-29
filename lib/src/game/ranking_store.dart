@@ -14,6 +14,7 @@ class RankingEntry {
     required this.words,
     required this.elapsedSeconds,
     required this.completedAt,
+    this.stageNumber = 0,
     this.errors = 0,
     this.hintsUsed = 0,
     this.skipsUsed = 0,
@@ -30,6 +31,7 @@ class RankingEntry {
     return RankingEntry(
       initials: (json['initials'] as String? ?? '---').toUpperCase(),
       level: level,
+      stageNumber: _stageNumberFromJson(json['stageNumber'] ?? json['stage']),
       score: RankingStore.scoreForPerformance(
         level: level,
         words: words,
@@ -51,6 +53,7 @@ class RankingEntry {
 
   final String initials;
   final GameLevel level;
+  final int stageNumber;
   final int score;
   final int words;
   final int elapsedSeconds;
@@ -63,6 +66,7 @@ class RankingEntry {
     return <String, Object?>{
       'initials': initials,
       'level': level.name,
+      'stageNumber': stageNumber,
       'score': score,
       'words': words,
       'elapsedSeconds': elapsedSeconds,
@@ -100,6 +104,15 @@ GameLevel _levelFromName(String? name) {
   return GameLevel.easy;
 }
 
+int _stageNumberFromJson(Object? value) {
+  final parsed = switch (value) {
+    final int number => number,
+    final String text => int.tryParse(text) ?? 0,
+    _ => 0,
+  };
+  return parsed > 0 ? parsed : 0;
+}
+
 class RankingStore {
   const RankingStore._();
 
@@ -128,15 +141,21 @@ class RankingStore {
   static const int pointsPerHint = 0;
   static const int pointsPerSkip = 160;
 
-  Future<List<RankingEntry>> loadEntries({GameLevel? level}) async {
+  Future<List<RankingEntry>> loadEntries({
+    GameLevel? level,
+    int? stageNumber,
+  }) async {
     if (_apiBaseUrl.isNotEmpty) {
-      final remoteEntries = await _loadRemoteEntries(level: level);
+      final remoteEntries = await _loadRemoteEntries(
+        level: level,
+        stageNumber: stageNumber,
+      );
       if (remoteEntries != null) {
         return remoteEntries;
       }
     }
 
-    return _loadLocalEntries(level: level);
+    return _loadLocalEntries(level: level, stageNumber: stageNumber);
   }
 
   Future<List<RankingEntry>> saveEntry(RankingEntry entry) async {
@@ -254,7 +273,10 @@ class RankingStore {
     );
   }
 
-  Future<List<RankingEntry>> _loadLocalEntries({GameLevel? level}) async {
+  Future<List<RankingEntry>> _loadLocalEntries({
+    GameLevel? level,
+    int? stageNumber,
+  }) async {
     final preferences = await SharedPreferences.getInstance();
     final rawEntries = preferences.getStringList(_storageKey) ?? <String>[];
     final entries = rawEntries
@@ -271,6 +293,9 @@ class RankingStore {
         })
         .nonNulls
         .where((entry) => level == null || entry.level == level)
+        .where(
+          (entry) => stageNumber == null || entry.stageNumber == stageNumber,
+        )
         .toList();
 
     _sortEntries(entries);
@@ -281,30 +306,43 @@ class RankingStore {
     final preferences = await SharedPreferences.getInstance();
     final entries = await _loadLocalEntries();
     entries.add(entry);
-    final groupedEntries = <RankingEntry>[
-      for (final level in GameLevel.values)
-        ..._bestEntriesForLevel(
-          entries.where((entry) => entry.level == level).toList(),
-        ),
-    ];
+    final groupedEntries = <RankingEntry>[];
+    final buckets = <String, List<RankingEntry>>{};
+    for (final entry in entries) {
+      final key = '${entry.level.name}:${entry.stageNumber}';
+      buckets.putIfAbsent(key, () => <RankingEntry>[]).add(entry);
+    }
+    for (final bucket in buckets.values) {
+      groupedEntries.addAll(_bestEntriesForLevel(bucket));
+    }
 
     await preferences.setStringList(
       _storageKey,
       groupedEntries.map((entry) => jsonEncode(entry.toJson())).toList(),
     );
 
-    return _loadLocalEntries(level: entry.level);
+    return _loadLocalEntries(
+      level: entry.level,
+      stageNumber: entry.stageNumber > 0 ? entry.stageNumber : null,
+    );
   }
 
-  Future<List<RankingEntry>?> _loadRemoteEntries({GameLevel? level}) async {
+  Future<List<RankingEntry>?> _loadRemoteEntries({
+    GameLevel? level,
+    int? stageNumber,
+  }) async {
     try {
-      final uri = _rankingUri(level: level);
+      final uri = _rankingUri(level: level, stageNumber: stageNumber);
       final response = await http.get(uri).timeout(_requestTimeout);
       if (response.statusCode != 200) {
         return null;
       }
 
-      return _entriesFromResponse(response.body, level: level);
+      return _entriesFromResponse(
+        response.body,
+        level: level,
+        stageNumber: stageNumber,
+      );
     } on Object {
       return null;
     }
@@ -314,7 +352,7 @@ class RankingStore {
     try {
       final response = await http
           .post(
-            _rankingUri(),
+            _rankingUri(stageNumber: entry.stageNumber),
             headers: const <String, String>{'content-type': 'application/json'},
             body: jsonEncode(entry.toJson()),
           )
@@ -323,7 +361,11 @@ class RankingStore {
         return null;
       }
 
-      return _entriesFromResponse(response.body, level: entry.level);
+      return _entriesFromResponse(
+        response.body,
+        level: entry.level,
+        stageNumber: entry.stageNumber > 0 ? entry.stageNumber : null,
+      );
     } on Object {
       return null;
     }
@@ -385,14 +427,15 @@ class RankingStore {
     }
 
     final random = Random.secure();
-    final id = List<int>.generate(24, (_) => random.nextInt(36))
-        .map((value) => value.toRadixString(36))
-        .join();
+    final id = List<int>.generate(
+      24,
+      (_) => random.nextInt(36),
+    ).map((value) => value.toRadixString(36)).join();
     await preferences.setString(_playerIdKey, id);
     return id;
   }
 
-  Uri _rankingUri({GameLevel? level}) {
+  Uri _rankingUri({GameLevel? level, int? stageNumber}) {
     final baseUri = Uri.parse(_apiBaseUrl);
     final path = baseUri.path.endsWith('/ranking')
         ? baseUri.path
@@ -400,7 +443,11 @@ class RankingStore {
 
     return baseUri.replace(
       path: path,
-      queryParameters: <String, String>{if (level != null) 'level': level.name},
+      queryParameters: <String, String>{
+        if (level != null) 'level': level.name,
+        if (stageNumber != null && stageNumber > 0)
+          'stage': stageNumber.toString(),
+      },
     );
   }
 
@@ -410,7 +457,11 @@ class RankingStore {
     return baseUri.replace(path: path);
   }
 
-  List<RankingEntry>? _entriesFromResponse(String body, {GameLevel? level}) {
+  List<RankingEntry>? _entriesFromResponse(
+    String body, {
+    GameLevel? level,
+    int? stageNumber,
+  }) {
     try {
       final decoded = jsonDecode(body);
       final rawEntries = switch (decoded) {
@@ -426,6 +477,9 @@ class RankingStore {
           .whereType<Map<String, dynamic>>()
           .map(RankingEntry.fromJson)
           .where((entry) => level == null || entry.level == level)
+          .where(
+            (entry) => stageNumber == null || entry.stageNumber == stageNumber,
+          )
           .toList();
       _sortEntries(entries);
       return entries.take(maxEntries).toList();
