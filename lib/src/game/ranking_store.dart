@@ -117,7 +117,6 @@ class RankingStore {
   const RankingStore._();
 
   static const RankingStore instance = RankingStore._();
-  static const int maxEntries = 10;
   static const Duration _requestTimeout = Duration(seconds: 6);
   static const String _storageKey = 'ranking_entries_v1';
   static const String _lastInitialsKey = 'ranking_last_initials_v1';
@@ -145,30 +144,36 @@ class RankingStore {
     GameLevel? level,
     int? stageNumber,
   }) async {
+    final localEntries = await _loadLocalEntries(
+      level: level,
+      stageNumber: stageNumber,
+    );
+
     if (_apiBaseUrl.isNotEmpty) {
       final remoteEntries = await _loadRemoteEntries(
         level: level,
         stageNumber: stageNumber,
       );
       if (remoteEntries != null) {
-        return remoteEntries;
+        return _mergedEntries(remoteEntries, localEntries);
       }
     }
 
-    return _loadLocalEntries(level: level, stageNumber: stageNumber);
+    return localEntries;
   }
 
   Future<List<RankingEntry>> saveEntry(RankingEntry entry) async {
     await saveLastInitials(entry.initials);
+    final localEntries = await _saveLocalEntry(entry);
 
     if (_apiBaseUrl.isNotEmpty) {
       final remoteEntries = await _saveRemoteEntry(entry);
       if (remoteEntries != null) {
-        return remoteEntries;
+        return _mergedEntries(remoteEntries, localEntries);
       }
     }
 
-    return _saveLocalEntry(entry);
+    return localEntries;
   }
 
   Future<String> loadLastInitials() async {
@@ -313,7 +318,7 @@ class RankingStore {
       buckets.putIfAbsent(key, () => <RankingEntry>[]).add(entry);
     }
     for (final bucket in buckets.values) {
-      groupedEntries.addAll(_bestEntriesForLevel(bucket));
+      groupedEntries.addAll(_rankedEntries(bucket));
     }
 
     await preferences.setStringList(
@@ -482,14 +487,14 @@ class RankingStore {
           )
           .toList();
       _sortEntries(entries);
-      return entries.take(maxEntries).toList();
+      return entries;
     } on Object {
       return null;
     }
   }
 
   static List<RankingEntry> bestEntries(List<RankingEntry> entries) {
-    return _bestEntriesForLevel([...entries]);
+    return _rankedEntries([...entries]);
   }
 
   static int scoreForPerformance({
@@ -511,9 +516,42 @@ class RankingStore {
     );
   }
 
-  static List<RankingEntry> _bestEntriesForLevel(List<RankingEntry> entries) {
+  static List<RankingEntry> _rankedEntries(List<RankingEntry> entries) {
     _sortEntries(entries);
-    return entries.take(maxEntries).toList();
+    return entries;
+  }
+
+  static List<RankingEntry> _mergedEntries(
+    List<RankingEntry> primaryEntries,
+    List<RankingEntry> fallbackEntries,
+  ) {
+    final seen = <String>{};
+    final merged = <RankingEntry>[];
+
+    for (final entry in [...primaryEntries, ...fallbackEntries]) {
+      final key = _entryKey(entry);
+      if (seen.add(key)) {
+        merged.add(entry);
+      }
+    }
+
+    _sortEntries(merged);
+    return merged;
+  }
+
+  static String _entryKey(RankingEntry entry) {
+    return [
+      entry.initials,
+      entry.level.name,
+      entry.stageNumber,
+      entry.score,
+      entry.words,
+      entry.elapsedSeconds,
+      entry.errors,
+      entry.hintsUsed,
+      entry.skipsUsed,
+      entry.completedAt.toUtc().millisecondsSinceEpoch,
+    ].join(':');
   }
 
   static void _sortEntries(List<RankingEntry> entries) {

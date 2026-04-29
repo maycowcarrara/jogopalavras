@@ -219,6 +219,33 @@ void main() {
     expect(secondStage.map((entry) => entry.initials), orderedEquals(['BBB']));
   });
 
+  test('mantem entradas locais mesmo fora do antigo top 10', () async {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+    final now = DateTime(2026, 4, 28);
+
+    for (var index = 0; index < 11; index++) {
+      await RankingStore.instance.saveEntry(
+        RankingEntry(
+          initials: 'AA${String.fromCharCode(65 + index)}',
+          level: GameLevel.easy,
+          stageNumber: 1,
+          score: 150,
+          words: 10,
+          elapsedSeconds: 80 + index,
+          completedAt: now.add(Duration(seconds: index)),
+        ),
+      );
+    }
+
+    final entries = await RankingStore.instance.loadEntries(
+      level: GameLevel.easy,
+      stageNumber: 1,
+    );
+
+    expect(entries, hasLength(11));
+    expect(entries.last.initials, 'AAK');
+  });
+
   test('bloqueia troca de assinatura por trinta dias', () async {
     SharedPreferences.setMockInitialValues(<String, Object>{});
 

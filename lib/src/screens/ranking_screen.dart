@@ -264,7 +264,7 @@ class _RankingHeader extends StatelessWidget {
         ? 'Calculando sua posição nesta fase...'
         : highlightPosition > 0
         ? 'Sua rodada ficou em #$highlightPosition com ${highlightEntry!.score} pontos.'
-        : 'Sua rodada foi salva com ${highlightEntry!.score} pontos e ficou fora do top 10.';
+        : 'Sua rodada foi salva com ${highlightEntry!.score} pontos.';
 
     return Container(
       padding: const EdgeInsets.all(20),

@@ -1,5 +1,4 @@
 const LEVELS = new Set(["easy", "medium", "hard", "pautaLivre"]);
-const MAX_ENTRIES = 10;
 const MAX_LOG_EVENTS = 8;
 const MAX_LOGS_PER_MINUTE = 30;
 const LOG_TTL_SECONDS = 60 * 60 * 24 * 30;
@@ -16,10 +15,11 @@ const POINTS_PER_HINT = 0;
 const POINTS_PER_SKIP = 160;
 const CORS_HEADERS = {
   "access-control-allow-origin": "*",
-  "access-control-allow-methods": "GET,POST,OPTIONS",
+  "access-control-allow-methods": "GET,POST,DELETE,OPTIONS",
   "access-control-allow-headers": "authorization,content-type,x-admin-token",
   "access-control-max-age": "86400",
 };
+const RESET_RANKING_PREFIXES = ["ranking:v1:", "ranking:v2:", "player:v1:"];
 
 export default {
   async fetch(request, env) {
@@ -38,6 +38,14 @@ export default {
       }
 
       return handleAdminLogsGet(url, request, env);
+    }
+
+    if (url.pathname === "/admin/reset-ranking") {
+      if (request.method !== "POST" && request.method !== "DELETE") {
+        return json({ error: "method_not_allowed" }, 405);
+      }
+
+      return handleAdminResetRanking(request, env);
     }
 
     if (url.pathname === "/logs") {
@@ -93,7 +101,7 @@ async function handleGet(url, env) {
     ? await readLevel(env, level, stageNumber)
     : (await Promise.all([...LEVELS].map((item) => readLevel(env, item)))).flat();
 
-  return json({ entries: sortEntries(entries).slice(0, MAX_ENTRIES) });
+  return json({ entries: sortEntries(entries) });
 }
 
 async function handlePost(request, env) {
@@ -112,7 +120,7 @@ async function handlePost(request, env) {
   await reserveLegacyInitials(env, [entry]);
   const entries = await readLevel(env, entry.level, entry.stageNumber);
   entries.push(entry);
-  const ranking = sortEntries(entries).slice(0, MAX_ENTRIES);
+  const ranking = sortEntries(entries);
   await env.RANKING_KV.put(
     keyFor(entry.level, entry.stageNumber),
     JSON.stringify(ranking),
@@ -218,6 +226,37 @@ async function handleAdminLogsGet(url, request, env) {
     cursor: listed.cursor ?? null,
     listComplete: listed.list_complete,
   });
+}
+
+async function handleAdminResetRanking(request, env) {
+  if (!env.ADMIN_LOGS_TOKEN) {
+    return json({ error: "admin_disabled" }, 404);
+  }
+
+  if (!(await isAdminAuthorized(request, env))) {
+    return json({ error: "unauthorized" }, 401);
+  }
+
+  const deletedByPrefix = {};
+  for (const prefix of RESET_RANKING_PREFIXES) {
+    deletedByPrefix[prefix] = await deletePrefix(env, prefix);
+  }
+
+  return json({ ok: true, deleted: deletedByPrefix });
+}
+
+async function deletePrefix(env, prefix) {
+  let cursor;
+  let deleted = 0;
+
+  do {
+    const listed = await env.RANKING_KV.list({ prefix, limit: 1000, cursor });
+    await Promise.all(listed.keys.map((item) => env.RANKING_KV.delete(item.name)));
+    deleted += listed.keys.length;
+    cursor = listed.list_complete ? undefined : listed.cursor;
+  } while (cursor);
+
+  return deleted;
 }
 
 async function handleLogPost(request, env) {
