@@ -62,4 +62,28 @@ void main() {
     expect(find.text('Efeitos'), findsOneWidget);
     expect(find.byType(Slider), findsOneWidget);
   });
+
+  testWidgets('controle de audio muta efeitos e salva preferência', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({'intro_seen_v1': true});
+    await tester.pumpWidget(const WordMazeApp());
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('app_audio_control_button')),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 160));
+
+    await tester.tap(find.text('Efeitos'));
+    await tester.pumpAndSettle();
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 50)),
+    );
+
+    expect(find.text('Efeitos mute'), findsOneWidget);
+    final preferences = await SharedPreferences.getInstance();
+    expect(preferences.getBool('effects_enabled_v1'), isFalse);
+  });
 }

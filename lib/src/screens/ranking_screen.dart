@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:jogopalavras/src/game/game_level.dart';
 import 'package:jogopalavras/src/game/ranking_store.dart';
@@ -10,9 +11,20 @@ import 'package:jogopalavras/src/widgets/app_backdrop.dart';
 import 'package:jogopalavras/src/widgets/reveal_on_mount.dart';
 
 class RankingScreen extends StatelessWidget {
-  const RankingScreen({super.key, this.initialLevel});
+  const RankingScreen({
+    super.key,
+    this.initialLevel,
+    this.highlightEntry,
+    this.continueLevel,
+    this.completedLevel,
+    this.completedGame = false,
+  });
 
   final GameLevel? initialLevel;
+  final RankingEntry? highlightEntry;
+  final GameLevel? continueLevel;
+  final GameLevel? completedLevel;
+  final bool completedGame;
 
   @override
   Widget build(BuildContext context) {
@@ -29,6 +41,7 @@ class RankingScreen extends StatelessWidget {
             'Ranking',
             style: TextStyle(fontWeight: FontWeight.w900),
           ),
+          actions: const [_SignatureActionButton()],
           bottom: TabBar(
             labelColor: AppTheme.midnight,
             indicatorColor: AppTheme.pressRed,
@@ -49,7 +62,20 @@ class RankingScreen extends StatelessWidget {
             child: TabBarView(
               children: [
                 for (final level in GameLevel.values)
-                  _RankingLevelView(level: level),
+                  _RankingLevelView(
+                    level: level,
+                    highlightEntry: highlightEntry?.level == level
+                        ? highlightEntry
+                        : null,
+                    continueLevel: highlightEntry?.level == level
+                        ? continueLevel
+                        : null,
+                    completedLevel: highlightEntry?.level == level
+                        ? completedLevel
+                        : null,
+                    completedGame:
+                        highlightEntry?.level == level && completedGame,
+                  ),
               ],
             ),
           ),
@@ -59,10 +85,154 @@ class RankingScreen extends StatelessWidget {
   }
 }
 
+class _SignatureActionButton extends StatelessWidget {
+  const _SignatureActionButton();
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: 'Alterar assinatura',
+      child: IconButton(
+        onPressed: () async {
+          final currentInitials = await RankingStore.instance
+              .loadLastInitials();
+          if (!context.mounted) {
+            return;
+          }
+
+          final nextInitials = await showDialog<String>(
+            context: context,
+            builder: (_) => _SignatureDialog(initialInitials: currentInitials),
+          );
+          if (nextInitials == null || !context.mounted) {
+            return;
+          }
+
+          await RankingStore.instance.saveLastInitials(nextInitials);
+          if (!context.mounted) {
+            return;
+          }
+
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Assinatura atualizada para $nextInitials.'),
+            ),
+          );
+        },
+        icon: const Icon(Icons.badge_rounded),
+      ),
+    );
+  }
+}
+
+class _SignatureDialog extends StatefulWidget {
+  const _SignatureDialog({required this.initialInitials});
+
+  final String initialInitials;
+
+  @override
+  State<_SignatureDialog> createState() => _SignatureDialogState();
+}
+
+class _SignatureDialogState extends State<_SignatureDialog> {
+  late final TextEditingController _controller;
+  String _initials = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _initials = widget.initialInitials;
+    _controller = TextEditingController(text: _initials);
+    _controller.selection = TextSelection.collapsed(offset: _initials.length);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _handleChanged(String value) {
+    final nextInitials = value.toUpperCase();
+    if (_controller.text != nextInitials) {
+      _controller.value = TextEditingValue(
+        text: nextInitials,
+        selection: TextSelection.collapsed(offset: nextInitials.length),
+      );
+    }
+
+    setState(() {
+      _initials = nextInitials;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final canSave = _initials.length >= 3 && _initials.length <= 5;
+
+    return AlertDialog(
+      backgroundColor: AppTheme.card,
+      shape: RoundedRectangleBorder(
+        side: const BorderSide(color: AppTheme.rule),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      title: const Text(
+        'Assinatura',
+        style: TextStyle(fontWeight: FontWeight.w900),
+      ),
+      content: TextField(
+        controller: _controller,
+        autofocus: true,
+        textAlign: TextAlign.center,
+        textCapitalization: TextCapitalization.characters,
+        maxLength: 5,
+        inputFormatters: [
+          FilteringTextInputFormatter.allow(RegExp('[a-zA-Z]')),
+          LengthLimitingTextInputFormatter(5),
+        ],
+        style: const TextStyle(
+          fontSize: 28,
+          fontWeight: FontWeight.w900,
+          letterSpacing: 4,
+        ),
+        decoration: const InputDecoration(
+          counterText: '',
+          hintText: 'MRC',
+          helperText: 'Use de 3 a 5 letras.',
+          border: OutlineInputBorder(),
+        ),
+        onChanged: _handleChanged,
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancelar'),
+        ),
+        ElevatedButton(
+          onPressed: canSave
+              ? () => Navigator.of(context).pop(_initials)
+              : null,
+          child: const Text('Salvar'),
+        ),
+      ],
+    );
+  }
+}
+
 class _RankingLevelView extends StatefulWidget {
-  const _RankingLevelView({required this.level});
+  const _RankingLevelView({
+    required this.level,
+    this.highlightEntry,
+    this.continueLevel,
+    this.completedLevel,
+    this.completedGame = false,
+  });
 
   final GameLevel level;
+  final RankingEntry? highlightEntry;
+  final GameLevel? continueLevel;
+  final GameLevel? completedLevel;
+  final bool completedGame;
 
   @override
   State<_RankingLevelView> createState() => _RankingLevelViewState();
@@ -95,6 +265,13 @@ class _RankingLevelViewState extends State<_RankingLevelView> {
       future: _entriesFuture,
       builder: (context, snapshot) {
         final entries = snapshot.data ?? <RankingEntry>[];
+        final isLoading = snapshot.connectionState != ConnectionState.done;
+        final highlightPosition = widget.highlightEntry == null || isLoading
+            ? 0
+            : entries.indexWhere(
+                    (entry) => _sameRankingEntry(entry, widget.highlightEntry!),
+                  ) +
+                  1;
 
         return RefreshIndicator(
           onRefresh: _refreshEntries,
@@ -102,9 +279,19 @@ class _RankingLevelViewState extends State<_RankingLevelView> {
             padding: const EdgeInsets.fromLTRB(24, 18, 24, 24),
             physics: const AlwaysScrollableScrollPhysics(),
             children: [
-              RevealOnMount(child: _RankingHeader(level: widget.level)),
+              RevealOnMount(
+                child: _RankingHeader(
+                  level: widget.level,
+                  highlightEntry: widget.highlightEntry,
+                  highlightPosition: highlightPosition,
+                  continueLevel: widget.continueLevel,
+                  completedLevel: widget.completedLevel,
+                  completedGame: widget.completedGame,
+                  isLoading: isLoading,
+                ),
+              ),
               const SizedBox(height: 18),
-              if (snapshot.connectionState != ConnectionState.done)
+              if (isLoading)
                 const Center(child: CircularProgressIndicator())
               else if (entries.isEmpty)
                 const _EmptyRanking()
@@ -116,6 +303,12 @@ class _RankingLevelViewState extends State<_RankingLevelView> {
                       position: index + 1,
                       entry: entries[index],
                       accent: widget.level.accent,
+                      isHighlighted:
+                          widget.highlightEntry != null &&
+                          _sameRankingEntry(
+                            entries[index],
+                            widget.highlightEntry!,
+                          ),
                     ),
                   ),
                   const SizedBox(height: 10),
@@ -129,12 +322,34 @@ class _RankingLevelViewState extends State<_RankingLevelView> {
 }
 
 class _RankingHeader extends StatelessWidget {
-  const _RankingHeader({required this.level});
+  const _RankingHeader({
+    required this.level,
+    this.highlightEntry,
+    this.highlightPosition = 0,
+    this.continueLevel,
+    this.completedLevel,
+    this.completedGame = false,
+    this.isLoading = false,
+  });
 
   final GameLevel level;
+  final RankingEntry? highlightEntry;
+  final int highlightPosition;
+  final GameLevel? continueLevel;
+  final GameLevel? completedLevel;
+  final bool completedGame;
+  final bool isLoading;
 
   @override
   Widget build(BuildContext context) {
+    final resultText = highlightEntry == null
+        ? 'Pontuação por eficiência: menos palavras e menor tempo.'
+        : isLoading
+        ? 'Calculando sua posição nesta fase...'
+        : highlightPosition > 0
+        ? 'Sua rodada ficou em #$highlightPosition com ${highlightEntry!.score} pontos.'
+        : 'Sua rodada foi salva com ${highlightEntry!.score} pontos e ficou fora do top 10.';
+
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -149,68 +364,197 @@ class _RankingHeader extends StatelessWidget {
           ),
         ],
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: 48,
-            height: 48,
-            decoration: BoxDecoration(
-              color: level.accent,
-              borderRadius: BorderRadius.circular(8),
+          if (completedLevel != null) ...[
+            _CompletionBanner(
+              level: completedLevel!,
+              completedGame: completedGame,
             ),
-            child: const Icon(Icons.emoji_events_rounded, color: Colors.white),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Melhores em ${level.title.toLowerCase()}',
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 0,
-                  ),
+            const SizedBox(height: 16),
+          ],
+          Row(
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: level.accent,
+                  borderRadius: BorderRadius.circular(8),
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  'Pontuação por eficiência: menos palavras e menor tempo.',
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.78),
-                    height: 1.25,
-                    fontWeight: FontWeight.w600,
-                  ),
+                child: const Icon(
+                  Icons.emoji_events_rounded,
+                  color: Colors.white,
                 ),
-                const SizedBox(height: 14),
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: ElevatedButton.icon(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppTheme.card,
-                      foregroundColor: AppTheme.midnight,
-                      elevation: 0,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 11,
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Melhores em ${level.title.toLowerCase()}',
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 0,
                       ),
                     ),
-                    onPressed: () {
-                      Navigator.of(context).pushReplacement(
-                        appPageRoute<void>(
-                          settings: RouteSettings(name: '/game/${level.name}'),
-                          builder: (_) => GameScreen(level: level),
+                    const SizedBox(height: 4),
+                    Text(
+                      resultText,
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.78),
+                        height: 1.25,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppTheme.card,
+                          foregroundColor: AppTheme.midnight,
+                          elevation: 0,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 11,
+                          ),
                         ),
-                      );
-                    },
-                    icon: const Icon(Icons.play_arrow_rounded, size: 20),
-                    label: Text('Jogar no ${level.title.toLowerCase()}'),
-                  ),
+                        onPressed: () {
+                          final nextLevel = continueLevel ?? level;
+                          Navigator.of(context).pushReplacement(
+                            appPageRoute<void>(
+                              settings: RouteSettings(
+                                name: '/game/${nextLevel.name}',
+                              ),
+                              builder: (_) => GameScreen(level: nextLevel),
+                            ),
+                          );
+                        },
+                        icon: const Icon(Icons.play_arrow_rounded, size: 20),
+                        label: Text(
+                          highlightEntry == null
+                              ? 'Jogar no ${level.title.toLowerCase()}'
+                              : continueLevel == null || continueLevel == level
+                              ? 'Continuar fase'
+                              : 'Continuar no ${continueLevel!.title.toLowerCase()}',
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _CompletionBanner extends StatelessWidget {
+  const _CompletionBanner({required this.level, required this.completedGame});
+
+  final GameLevel level;
+  final bool completedGame;
+
+  @override
+  Widget build(BuildContext context) {
+    final title = completedGame
+        ? 'Edição entregue'
+        : switch (level) {
+            GameLevel.easy => 'Pauta concluída',
+            GameLevel.medium => 'Redação concluída',
+            GameLevel.hard => 'Fechamento concluído',
+            GameLevel.pautaLivre => 'Plantão concluído',
+          };
+    final subtitle = completedGame
+        ? 'Você fechou a campanha inteira. A edição está pronta para circular.'
+        : switch (level) {
+            GameLevel.easy =>
+              'A apuração inicial está pronta para virar matéria.',
+            GameLevel.medium =>
+              'O texto ganhou corpo e segue para o fechamento.',
+            GameLevel.hard => 'A última página foi revisada com sucesso.',
+            GameLevel.pautaLivre => 'Rodada livre registrada no plantão.',
+          };
+
+    return TweenAnimationBuilder<double>(
+      tween: Tween<double>(begin: 0.92, end: 1),
+      duration: const Duration(milliseconds: 520),
+      curve: Curves.easeOutBack,
+      builder: (context, scale, child) {
+        return Transform.scale(
+          scale: scale,
+          alignment: Alignment.centerLeft,
+          child: child,
+        );
+      },
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: level.accent.withValues(alpha: 0.72)),
+        ),
+        child: Row(
+          children: [
+            TweenAnimationBuilder<double>(
+              tween: Tween<double>(begin: 0, end: 1),
+              duration: const Duration(milliseconds: 760),
+              curve: Curves.easeOutCubic,
+              builder: (context, value, child) {
+                return Transform.rotate(
+                  angle: (1 - value) * -0.45,
+                  child: Opacity(opacity: value, child: child),
+                );
+              },
+              child: Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: level.accent,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(
+                  completedGame
+                      ? Icons.local_shipping_rounded
+                      : Icons.check_circle_rounded,
+                  color: Colors.white,
+                  size: 24,
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 0,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.78),
+                      height: 1.25,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -221,20 +565,27 @@ class _RankingCard extends StatelessWidget {
     required this.position,
     required this.entry,
     required this.accent,
+    this.isHighlighted = false,
   });
 
   final int position;
   final RankingEntry entry;
   final Color accent;
+  final bool isHighlighted;
 
   @override
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: AppTheme.card.withValues(alpha: 0.96),
+        color: isHighlighted
+            ? accent.withValues(alpha: 0.13)
+            : AppTheme.card.withValues(alpha: 0.96),
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: AppTheme.rule.withValues(alpha: 0.86)),
+        border: Border.all(
+          color: isHighlighted ? accent : AppTheme.rule.withValues(alpha: 0.86),
+          width: isHighlighted ? 2 : 1,
+        ),
         boxShadow: [
           BoxShadow(
             color: AppTheme.midnight.withValues(alpha: 0.08),
@@ -287,8 +638,37 @@ class _RankingCard extends StatelessWidget {
               ],
             ),
           ),
+          if (isHighlighted) ...[
+            const SizedBox(width: 10),
+            _CurrentPlayerBadge(accent: accent),
+          ],
           _ScoreBadge(score: entry.score),
         ],
+      ),
+    );
+  }
+}
+
+class _CurrentPlayerBadge extends StatelessWidget {
+  const _CurrentPlayerBadge({required this.accent});
+
+  final Color accent;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      decoration: BoxDecoration(
+        color: accent,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: const Text(
+        'Você',
+        style: TextStyle(
+          color: Colors.white,
+          fontSize: 11,
+          fontWeight: FontWeight.w900,
+        ),
       ),
     );
   }
@@ -357,7 +737,7 @@ class _EmptyRanking extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           Text(
-            'Complete uma rodada e registre suas 3 letras para aparecer aqui.',
+            'Complete uma rodada e registre de 3 a 5 letras para aparecer aqui.',
             textAlign: TextAlign.center,
             style: TextStyle(
               color: AppTheme.ink.withValues(alpha: 0.72),
@@ -369,6 +749,21 @@ class _EmptyRanking extends StatelessWidget {
       ),
     );
   }
+}
+
+bool _sameRankingEntry(RankingEntry a, RankingEntry b) {
+  final sameCompletedAt =
+      a.completedAt.difference(b.completedAt).abs() <
+      const Duration(seconds: 2);
+
+  return a.initials == b.initials &&
+      a.level == b.level &&
+      a.score == b.score &&
+      a.words == b.words &&
+      a.elapsedSeconds == b.elapsedSeconds &&
+      a.errors == b.errors &&
+      a.skipsUsed == b.skipsUsed &&
+      sameCompletedAt;
 }
 
 String _formatTime(int totalSeconds) {

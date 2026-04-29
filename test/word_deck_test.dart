@@ -36,10 +36,7 @@ void main() {
   );
 
   test('pula palavras já usadas quando há alternativa disponível', () {
-    final deck = WordDeck(
-      ['USADA', 'NOVA'],
-      random: _SequenceRandom([1]),
-    );
+    final deck = WordDeck(['USADA', 'NOVA'], random: _SequenceRandom([1]));
 
     expect(deck.nextWhere((word) => word != 'USADA'), 'NOVA');
   });
@@ -79,6 +76,12 @@ void main() {
         );
       }
     }
+  });
+
+  test('banco expandido tem pelo menos trezentas palavras novas por nível', () {
+    expect(wordBank[GameLevel.easy]!.length, greaterThanOrEqualTo(464));
+    expect(wordBank[GameLevel.medium]!.length, greaterThanOrEqualTo(504));
+    expect(wordBank[GameLevel.hard]!.length, greaterThanOrEqualTo(492));
   });
 }
 

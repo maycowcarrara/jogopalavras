@@ -115,12 +115,20 @@ void main() {
   });
 
   test('recalcula pontuacao com penalidade de pulos', () {
-    final scoreWithoutSkip = RankingStore.scoreForPerformance(
+    final scoreWithoutHint = RankingStore.scoreForPerformance(
+      level: GameLevel.easy,
+      words: 10,
+      elapsedSeconds: 60,
+    );
+    final scoreWithHint = RankingStore.scoreForPerformance(
       level: GameLevel.easy,
       words: 10,
       elapsedSeconds: 60,
       hintsUsed: 1,
     );
+
+    expect(scoreWithHint, scoreWithoutHint);
+
     final scoreWithSkip = RankingStore.scoreForPerformance(
       level: GameLevel.easy,
       words: 10,
@@ -129,7 +137,7 @@ void main() {
       skipsUsed: 1,
     );
 
-    expect(scoreWithSkip, scoreWithoutSkip - RankingStore.pointsPerSkip);
+    expect(scoreWithSkip, scoreWithoutHint - RankingStore.pointsPerSkip);
 
     final entry = RankingEntry.fromJson(<String, Object?>{
       'initials': 'MRC',
@@ -149,9 +157,9 @@ void main() {
   test('lembra as ultimas iniciais usadas no ranking', () async {
     SharedPreferences.setMockInitialValues(<String, Object>{});
 
-    await RankingStore.instance.saveLastInitials('abc');
+    await RankingStore.instance.saveLastInitials('abcde');
 
-    expect(await RankingStore.instance.loadLastInitials(), 'ABC');
+    expect(await RankingStore.instance.loadLastInitials(), 'ABCDE');
   });
 
   test('salvar entrada atualiza iniciais lembradas', () async {
@@ -159,7 +167,7 @@ void main() {
 
     await RankingStore.instance.saveEntry(
       RankingEntry(
-        initials: 'XYZ',
+        initials: 'MAYCO',
         level: GameLevel.easy,
         score: 150,
         words: 15,
@@ -168,6 +176,6 @@ void main() {
       ),
     );
 
-    expect(await RankingStore.instance.loadLastInitials(), 'XYZ');
+    expect(await RankingStore.instance.loadLastInitials(), 'MAYCO');
   });
 }

@@ -5,10 +5,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:jogopalavras/src/core/ads/ad_service.dart';
 import 'package:jogopalavras/src/core/audio/game_music_service.dart';
+import 'package:jogopalavras/src/game/campaign_progress_store.dart';
 import 'package:jogopalavras/src/game/game_level.dart';
 import 'package:jogopalavras/src/game/ranking_store.dart';
 import 'package:jogopalavras/src/game/word_bank.dart';
 import 'package:jogopalavras/src/game/word_deck.dart';
+import 'package:jogopalavras/src/game/word_progress_store.dart';
 import 'package:jogopalavras/src/navigation/app_page_route.dart';
 import 'package:jogopalavras/src/screens/ranking_screen.dart';
 import 'package:jogopalavras/src/theme/app_theme.dart';
@@ -23,8 +25,6 @@ class GameScreen extends StatefulWidget {
   @override
   State<GameScreen> createState() => _GameScreenState();
 }
-
-enum _VictoryAction { back, ranking, replay }
 
 class _InitialsDialog extends StatefulWidget {
   const _InitialsDialog({
@@ -94,7 +94,7 @@ class _InitialsDialogState extends State<_InitialsDialog> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Você fez ${widget.score} pontos com ${widget.words} acertos. Digite 3 letras para salvar no ranking.',
+              'Você fez ${widget.score} pontos com ${widget.words} acertos. Digite de 3 a 5 letras para salvar no ranking.',
               style: const TextStyle(height: 1.35),
             ),
             const SizedBox(height: 16),
@@ -103,19 +103,19 @@ class _InitialsDialogState extends State<_InitialsDialog> {
               autofocus: true,
               textAlign: TextAlign.center,
               textCapitalization: TextCapitalization.characters,
-              maxLength: 3,
+              maxLength: 5,
               inputFormatters: [
                 FilteringTextInputFormatter.allow(RegExp('[a-zA-Z]')),
-                LengthLimitingTextInputFormatter(3),
+                LengthLimitingTextInputFormatter(5),
               ],
               style: const TextStyle(
                 fontSize: 28,
                 fontWeight: FontWeight.w900,
-                letterSpacing: 6,
+                letterSpacing: 4,
               ),
               decoration: const InputDecoration(
                 counterText: '',
-                hintText: 'ABC',
+                hintText: 'MRC',
                 border: OutlineInputBorder(),
               ),
               onChanged: _handleChanged,
@@ -124,7 +124,8 @@ class _InitialsDialogState extends State<_InitialsDialog> {
         ),
         actions: [
           ElevatedButton(
-            onPressed: _currentInitials.length == 3
+            onPressed:
+                _currentInitials.length >= 3 && _currentInitials.length <= 5
                 ? () => Navigator.of(context).pop(_currentInitials)
                 : null,
             child: const Text('Salvar'),
@@ -136,17 +137,16 @@ class _InitialsDialogState extends State<_InitialsDialog> {
 }
 
 class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
-  static const int _pointsPerHint = RankingStore.pointsPerHint;
   static const int _pointsPerSkip = RankingStore.pointsPerSkip;
-  static const Duration _hintDelay = Duration(seconds: 10);
   static const Duration _typewriterTick = Duration(milliseconds: 78);
   static const Duration _hitCelebrationHold = Duration(milliseconds: 900);
 
   late final Map<GameLevel, WordDeck<WordEntry>> _wordDecks;
   late final Random _random;
-  Timer? _hintTimer;
   Timer? _scoreTimer;
 
+  final Map<GameLevel, Set<String>> _usedWordsByLevel =
+      <GameLevel, Set<String>>{};
   List<String> _grid = <String>[];
   List<int> _selectedIndices = <int>[];
   List<String> _discoveredWords = <String>[];
@@ -156,13 +156,11 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   String _currentHint = '';
   late int _score;
   int _errors = 0;
-  int _hintsUsed = 0;
   int _skipsUsed = 0;
   int _elapsedSeconds = 0;
-  int _roundErrors = 0;
+  int _roundTargetWordCount = 1;
   bool _hasError = false;
-  bool _hintSuggested = false;
-  bool _hintRevealed = false;
+  bool _isPreparingRound = true;
   bool _isHitCelebrating = false;
   bool _isPaused = false;
   bool _exitDialogOpen = false;
@@ -180,14 +178,43 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       for (final level in widget.level.sourceLevels)
         level: WordDeck(wordBank[level]!, random: _random),
     };
+    unawaited(_prepareGame());
+    _startMusic();
+  }
+
+  Future<void> _prepareGame() async {
+    if (_tracksCampaignWords) {
+      final usedWords = await WordProgressStore.instance.loadUsedWords(
+        widget.level,
+      );
+      final totalWords = wordBank[widget.level]!.length;
+      if (usedWords.length >= totalWords) {
+        await WordProgressStore.instance.resetLevel(widget.level);
+        usedWords.clear();
+      }
+
+      _usedWordsByLevel[widget.level] = usedWords;
+      _roundTargetWordCount = min(
+        widget.level.targetWordCount,
+        max(1, totalWords - usedWords.length),
+      );
+    } else {
+      _roundTargetWordCount = widget.level.targetWordCount;
+    }
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _isPreparingRound = false;
+    });
     _generateRound();
     _startScoreTimer();
-    _startMusic();
   }
 
   @override
   void dispose() {
-    _hintTimer?.cancel();
     _scoreTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     GameMusicService.instance.clearGamePause();
@@ -215,7 +242,6 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       words: _discoveredWords.length,
       elapsedSeconds: _elapsedSeconds,
       errors: _errors,
-      hintsUsed: _hintsUsed,
       skipsUsed: _skipsUsed,
     );
   }
@@ -266,18 +292,15 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     });
 
     if (nextValue) {
-      _hintTimer?.cancel();
       await GameMusicService.instance.pause(holdForGame: true);
       return;
     }
 
-    _scheduleHintPrompt();
     await GameMusicService.instance.resume(widget.level);
   }
 
-  void _generateRound() {
-    _hintTimer?.cancel();
-    final nextEntry = _nextWordEntry();
+  void _generateRound({String? avoidWord}) {
+    final nextEntry = _nextWordEntry(avoidWord: avoidWord);
     final nextWord = nextEntry.text;
     _sessionWords.add(nextWord);
     final totalCells = widget.level.gridSize * widget.level.gridSize;
@@ -297,21 +320,53 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       _currentWord = '';
       _dragPosition = null;
       _hasError = false;
-      _roundErrors = 0;
-      _hintSuggested = false;
-      _hintRevealed = false;
       _isHitCelebrating = false;
       _typedHitWord = '';
     });
-    _scheduleHintPrompt();
   }
 
-  WordEntry _nextWordEntry() {
+  WordEntry _nextWordEntry({String? avoidWord}) {
     final sourceLevel = _sourceLevelForNextWord();
+    final usedWords = _usedWordsByLevel[sourceLevel] ?? const <String>{};
+
+    bool isFreshCandidate(WordEntry entry) =>
+        !_sessionWords.contains(entry.text) &&
+        !usedWords.contains(entry.text);
+
+    if (_hasWordCandidate(sourceLevel, isFreshCandidate)) {
+      return _wordDecks[sourceLevel]!.nextWhere(isFreshCandidate);
+    }
+
+    bool isSkippedCandidate(WordEntry entry) =>
+        !_discoveredWords.contains(entry.text) &&
+        !usedWords.contains(entry.text) &&
+        entry.text != avoidWord;
+
+    if (_hasWordCandidate(sourceLevel, isSkippedCandidate)) {
+      return _wordDecks[sourceLevel]!.nextWhere(isSkippedCandidate);
+    }
+
+    bool isAnyUnsolvedCandidate(WordEntry entry) =>
+        !_discoveredWords.contains(entry.text) &&
+        !usedWords.contains(entry.text);
+
+    if (_hasWordCandidate(sourceLevel, isAnyUnsolvedCandidate)) {
+      return _wordDecks[sourceLevel]!.nextWhere(isAnyUnsolvedCandidate);
+    }
+
     return _wordDecks[sourceLevel]!.nextWhere(
-      (entry) => !_sessionWords.contains(entry.text),
+      (entry) => !usedWords.contains(entry.text),
     );
   }
+
+  bool _hasWordCandidate(
+    GameLevel level,
+    bool Function(WordEntry entry) test,
+  ) {
+    return wordBank[level]!.any(test);
+  }
+
+  bool get _tracksCampaignWords => !widget.level.mixesAllLevels;
 
   GameLevel _sourceLevelForNextWord() {
     if (!widget.level.mixesAllLevels) {
@@ -320,37 +375,6 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
 
     final sourceLevels = widget.level.sourceLevels;
     return sourceLevels[_random.nextInt(sourceLevels.length)];
-  }
-
-  void _scheduleHintPrompt() {
-    _hintTimer?.cancel();
-    if (_isPaused || _hintSuggested || _hintRevealed || _currentHint.isEmpty) {
-      return;
-    }
-
-    _hintTimer = Timer(_hintDelay, () {
-      if (!mounted || _isPaused || _hintRevealed) {
-        return;
-      }
-
-      setState(() {
-        _hintSuggested = true;
-      });
-    });
-  }
-
-  void _revealHint() {
-    if (_isPaused || _hintRevealed || _currentHint.isEmpty) {
-      return;
-    }
-
-    _hintTimer?.cancel();
-    setState(() {
-      _hintRevealed = true;
-      _hintSuggested = false;
-      _hintsUsed += 1;
-      _score = _scoreFromStats();
-    });
   }
 
   Future<void> _skipWord() async {
@@ -392,12 +416,11 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       return;
     }
 
-    _hintTimer?.cancel();
     setState(() {
       _skipsUsed += 1;
       _score = _scoreFromStats();
     });
-    _generateRound();
+    _generateRound(avoidWord: _targetWord);
   }
 
   Future<void> _confirmExitGame() async {
@@ -475,7 +498,6 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     }
 
     if (_currentWord == _targetWord) {
-      _hintTimer?.cancel();
       final completedWord = _targetWord;
       final completedWords = _discoveredWords.length + 1;
       setState(() {
@@ -492,25 +514,55 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
         return;
       }
 
-      if (completedWords >= widget.level.targetWordCount) {
+      if (completedWords >= _roundTargetWordCount) {
         _scoreTimer?.cancel();
         await GameMusicService.instance.playEndOfGame();
-        final entry = await _showInitialsDialog();
+        final entry = await _completedRankingEntry();
         if (entry == null || !mounted) {
           return;
         }
 
-        final ranking = await RankingStore.instance.saveEntry(entry);
+        GameLevel? continueLevel = widget.level;
+        GameLevel? completedLevel;
+        var completedGame = false;
+        if (_tracksCampaignWords) {
+          final usedWords = await WordProgressStore.instance.markWordsUsed(
+            widget.level,
+            _discoveredWords,
+          );
+          final levelCompleted =
+              usedWords.length >= wordBank[widget.level]!.length;
+          if (levelCompleted) {
+            completedLevel = widget.level;
+            completedGame = widget.level == GameLevel.hard;
+            final campaignProgress = await CampaignProgressStore.instance
+                .completeLevel(widget.level);
+            continueLevel = campaignProgress.nextLevelAfter(widget.level);
+          }
+        }
+
+        await RankingStore.instance.saveEntry(entry);
         if (!mounted) {
           return;
         }
 
-        final action = await _showVictoryDialog(entry, ranking);
-        if (!mounted || action == null) {
+        await AdService.instance.registerNaturalBreak();
+        if (!mounted) {
           return;
         }
 
-        await _handleVictoryAction(action);
+        await Navigator.of(context).pushReplacement(
+          appPageRoute<void>(
+            settings: const RouteSettings(name: '/ranking'),
+            builder: (_) => RankingScreen(
+              initialLevel: widget.level,
+              highlightEntry: entry,
+              continueLevel: continueLevel,
+              completedLevel: completedLevel,
+              completedGame: completedGame,
+            ),
+          ),
+        );
       } else {
         _generateRound();
       }
@@ -522,8 +574,6 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       _hasError = true;
       _errors += 1;
       _score = _scoreFromStats();
-      _roundErrors += 1;
-      _hintSuggested = _hintSuggested || (!_hintRevealed && _roundErrors >= 2);
       _selectedIndices = <int>[];
       _currentWord = '';
     });
@@ -550,7 +600,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     });
   }
 
-  Future<RankingEntry?> _showInitialsDialog() async {
+  Future<RankingEntry?> _completedRankingEntry() async {
     final finalScore = _scoreFromStats();
     final completedEntry = RankingEntry(
       initials: '',
@@ -560,7 +610,6 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       elapsedSeconds: _elapsedSeconds,
       completedAt: DateTime.now(),
       errors: _errors,
-      hintsUsed: _hintsUsed,
       skipsUsed: _skipsUsed,
     );
 
@@ -569,15 +618,17 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       return null;
     }
 
-    final initials = await showDialog<String>(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => _InitialsDialog(
-        score: completedEntry.score,
-        words: completedEntry.words,
-        initialInitials: lastInitials,
-      ),
-    );
+    final initials = lastInitials.isNotEmpty
+        ? lastInitials
+        : await showDialog<String>(
+            context: context,
+            barrierDismissible: false,
+            builder: (_) => _InitialsDialog(
+              score: completedEntry.score,
+              words: completedEntry.words,
+              initialInitials: lastInitials,
+            ),
+          );
 
     if (initials == null) {
       return null;
@@ -591,156 +642,44 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       elapsedSeconds: completedEntry.elapsedSeconds,
       completedAt: completedEntry.completedAt,
       errors: completedEntry.errors,
-      hintsUsed: completedEntry.hintsUsed,
       skipsUsed: completedEntry.skipsUsed,
     );
   }
 
-  Future<_VictoryAction?> _showVictoryDialog(
-    RankingEntry entry,
-    List<RankingEntry> ranking,
-  ) async {
-    final position =
-        ranking.indexWhere(
-          (candidate) =>
-              candidate.initials == entry.initials &&
-              candidate.completedAt == entry.completedAt,
-        ) +
-        1;
-
-    return showDialog<_VictoryAction>(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) {
-        return AlertDialog(
-          backgroundColor: AppTheme.card,
-          shape: RoundedRectangleBorder(
-            side: const BorderSide(color: AppTheme.rule),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          titlePadding: const EdgeInsets.fromLTRB(24, 24, 24, 8),
-          contentPadding: const EdgeInsets.fromLTRB(24, 0, 24, 20),
-          actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-          title: Row(
-            children: [
-              Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  color: AppTheme.pressRed,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Icon(
-                  Icons.emoji_events_rounded,
-                  color: Colors.white,
-                ),
-              ),
-              const SizedBox(width: 14),
-              const Expanded(
-                child: Text(
-                  'Você venceu!',
-                  style: TextStyle(fontWeight: FontWeight.w900),
-                ),
-              ),
-            ],
-          ),
-          content: Text(
-            'Você fez ${entry.words} acertos, somou ${entry.score} pontos e entrou no ranking${position > 0 ? ' em #$position' : ''}. Quer começar outra rodada?',
-            style: const TextStyle(height: 1.4),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(_VictoryAction.back),
-              child: const Text('Voltar'),
-            ),
-            OutlinedButton.icon(
-              onPressed: () =>
-                  Navigator.of(context).pop(_VictoryAction.ranking),
-              icon: const Icon(Icons.leaderboard_rounded, size: 18),
-              label: const Text('Ranking'),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: AppTheme.midnight,
-                backgroundColor: AppTheme.pressBlue.withValues(alpha: 0.08),
-                side: BorderSide(
-                  color: AppTheme.pressBlue.withValues(alpha: 0.42),
-                ),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 14,
-                  vertical: 10,
-                ),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                textStyle: const TextStyle(
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 0,
-                ),
-              ),
-            ),
-            ElevatedButton(
-              onPressed: () => Navigator.of(context).pop(_VictoryAction.replay),
-              child: const Text('Jogar de novo'),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  Future<void> _handleVictoryAction(_VictoryAction action) async {
-    switch (action) {
-      case _VictoryAction.back:
-        Navigator.of(context).pop();
-      case _VictoryAction.ranking:
-        await Navigator.of(context).pushReplacement(
-          appPageRoute<void>(
-            settings: const RouteSettings(name: '/ranking'),
-            builder: (_) => RankingScreen(initialLevel: widget.level),
-          ),
-        );
-      case _VictoryAction.replay:
-        await AdService.instance.registerNaturalBreak();
-        if (!mounted) {
-          return;
-        }
-        setState(() {
-          _score = RankingStore.startingScoreForLevel(widget.level);
-          _errors = 0;
-          _hintsUsed = 0;
-          _skipsUsed = 0;
-          _elapsedSeconds = 0;
-          _discoveredWords = <String>[];
-          _sessionWords.clear();
-          _currentWord = '';
-          _selectedIndices = <int>[];
-          _dragPosition = null;
-          _hasError = false;
-          _roundErrors = 0;
-          _hintSuggested = false;
-          _hintRevealed = false;
-          _isHitCelebrating = false;
-          _isPaused = false;
-          _typedHitWord = '';
-        });
-        _generateRound();
-        _startScoreTimer();
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
-    final targetWordCount = widget.level.targetWordCount;
+    final targetWordCount = _roundTargetWordCount;
     final progress = (_discoveredWords.length / targetWordCount).clamp(
       0.0,
       1.0,
     );
+    final systemUiStyle = SystemUiOverlayStyle.dark.copyWith(
+      statusBarColor: Colors.transparent,
+      statusBarIconBrightness: Brightness.dark,
+      statusBarBrightness: Brightness.light,
+    );
+
+    if (_isPreparingRound) {
+      return AnnotatedRegion<SystemUiOverlayStyle>(
+        value: systemUiStyle,
+        child: Scaffold(
+          body: AppBackdrop(
+            primary: widget.level.accent,
+            secondary: AppTheme.pressRed,
+            showAudioControl: false,
+            child: const Center(
+              child: SizedBox.square(
+                dimension: 32,
+                child: CircularProgressIndicator(strokeWidth: 3),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: SystemUiOverlayStyle.dark.copyWith(
-        statusBarColor: Colors.transparent,
-        statusBarIconBrightness: Brightness.dark,
-        statusBarBrightness: Brightness.light,
-      ),
+      value: systemUiStyle,
       child: PopScope(
         canPop: false,
         onPopInvokedWithResult: (didPop, result) {
@@ -914,12 +853,8 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                                         height: actionHeight,
                                         child: _RoundActionPanel(
                                           hint: _currentHint,
-                                          hintSuggested: _hintSuggested,
-                                          hintRevealed: _hintRevealed,
-                                          hintPenalty: _pointsPerHint,
                                           skipPenalty: _pointsPerSkip,
                                           compact: layout.compact,
-                                          onRevealHint: _revealHint,
                                           onSkipWord: _skipWord,
                                         ),
                                       ),
@@ -1192,47 +1127,18 @@ class _RoundScenePanel extends StatelessWidget {
 class _RoundActionPanel extends StatelessWidget {
   const _RoundActionPanel({
     required this.hint,
-    required this.hintSuggested,
-    required this.hintRevealed,
-    required this.hintPenalty,
     required this.skipPenalty,
     required this.compact,
-    required this.onRevealHint,
     required this.onSkipWord,
   });
 
   final String hint;
-  final bool hintSuggested;
-  final bool hintRevealed;
-  final int hintPenalty;
   final int skipPenalty;
   final bool compact;
-  final VoidCallback onRevealHint;
   final VoidCallback onSkipWord;
 
   @override
   Widget build(BuildContext context) {
-    final showHintControl = hintSuggested || hintRevealed;
-    final hintRow = hintRevealed
-        ? _HintPanel(
-            hint: hint,
-            suggested: hintSuggested,
-            revealed: true,
-            hintPenalty: hintPenalty,
-            compact: compact,
-            onPressed: onRevealHint,
-          )
-        : showHintControl
-        ? _HintPanel(
-            hint: hint,
-            suggested: hintSuggested,
-            revealed: false,
-            hintPenalty: hintPenalty,
-            compact: compact,
-            onPressed: onRevealHint,
-          )
-        : const _HintWaitingPill();
-
     return Container(
       padding: EdgeInsets.symmetric(
         horizontal: compact ? 10 : 12,
@@ -1261,53 +1167,13 @@ class _RoundActionPanel extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.center,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          hintRow,
+          _HintPanel(hint: hint, compact: compact),
           SizedBox(height: compact ? 8 : 10),
           _SkipWordButton(
             penalty: skipPenalty,
             dense: compact,
             compact: compact,
             onPressed: onSkipWord,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _HintWaitingPill extends StatelessWidget {
-  const _HintWaitingPill();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      constraints: const BoxConstraints(minHeight: 50),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
-      decoration: BoxDecoration(
-        color: AppTheme.midnight.withValues(alpha: 0.055),
-        borderRadius: BorderRadius.circular(9),
-        border: Border.all(color: AppTheme.rule.withValues(alpha: 0.72)),
-      ),
-      child: Row(
-        children: [
-          Icon(
-            Icons.lightbulb_outline_rounded,
-            color: AppTheme.pressBlue.withValues(alpha: 0.72),
-            size: 19,
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              'Dica em instantes',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: AppTheme.ink.withValues(alpha: 0.64),
-                fontWeight: FontWeight.w800,
-                fontSize: 13.5,
-                letterSpacing: 0,
-              ),
-            ),
           ),
         ],
       ),
@@ -1421,99 +1287,48 @@ class _ScoreChip extends StatelessWidget {
 }
 
 class _HintPanel extends StatelessWidget {
-  const _HintPanel({
-    required this.hint,
-    required this.suggested,
-    required this.revealed,
-    required this.hintPenalty,
-    required this.compact,
-    required this.onPressed,
-  });
+  const _HintPanel({required this.hint, required this.compact});
 
   final String hint;
-  final bool suggested;
-  final bool revealed;
-  final int hintPenalty;
   final bool compact;
-  final VoidCallback onPressed;
 
   @override
   Widget build(BuildContext context) {
-    if (revealed) {
-      return SizedBox(
-        width: double.infinity,
-        child: Container(
-          padding: EdgeInsets.symmetric(
-            horizontal: compact ? 12 : 14,
-            vertical: compact ? 9 : 10,
-          ),
-          decoration: BoxDecoration(
-            color: AppTheme.pressBlue.withValues(alpha: 0.1),
-            borderRadius: BorderRadius.circular(9),
-            border: Border.all(
-              color: AppTheme.pressBlue.withValues(alpha: 0.34),
+    return SizedBox(
+      width: double.infinity,
+      child: Container(
+        padding: EdgeInsets.symmetric(
+          horizontal: compact ? 12 : 14,
+          vertical: compact ? 9 : 10,
+        ),
+        decoration: BoxDecoration(
+          color: AppTheme.pressBlue.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(9),
+          border: Border.all(color: AppTheme.pressBlue.withValues(alpha: 0.34)),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(
+              Icons.lightbulb_outline_rounded,
+              color: AppTheme.pressBlue,
+              size: compact ? 16 : 17,
             ),
-          ),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Icon(
-                Icons.lightbulb_outline_rounded,
-                color: AppTheme.pressBlue,
-                size: compact ? 16 : 17,
-              ),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  'Dica: $hint',
-                  maxLines: compact ? 2 : 3,
-                  overflow: TextOverflow.visible,
-                  style: TextStyle(
-                    color: AppTheme.midnight,
-                    fontWeight: FontWeight.w800,
-                    fontSize: compact ? 13.5 : 14.5,
-                    height: 1.22,
-                  ),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                'Dica: $hint',
+                maxLines: compact ? 2 : 3,
+                overflow: TextOverflow.visible,
+                style: TextStyle(
+                  color: AppTheme.midnight,
+                  fontWeight: FontWeight.w800,
+                  fontSize: compact ? 13.5 : 14.5,
+                  height: 1.22,
                 ),
               ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    if (!suggested) {
-      return const SizedBox.shrink();
-    }
-
-    return FilledButton.icon(
-      onPressed: onPressed,
-      icon: Icon(Icons.lightbulb_outline_rounded, size: compact ? 19 : 20),
-      label: Text(
-        'Ver dica  -$hintPenalty pts',
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-      ),
-      style: FilledButton.styleFrom(
-        backgroundColor: AppTheme.pressBlue,
-        foregroundColor: Colors.white,
-        elevation: 2,
-        shadowColor: AppTheme.pressBlue.withValues(alpha: 0.24),
-        visualDensity: VisualDensity.compact,
-        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        minimumSize: Size(double.infinity, compact ? 50 : 54),
-        padding: EdgeInsets.symmetric(
-          horizontal: compact ? 18 : 20,
-          vertical: compact ? 13 : 14,
-        ),
-        shape: RoundedRectangleBorder(
-          side: BorderSide(color: Colors.white.withValues(alpha: 0.14)),
-          borderRadius: BorderRadius.circular(8),
-        ),
-        textStyle: TextStyle(
-          fontWeight: FontWeight.w900,
-          fontSize: compact ? 14 : 15,
-          letterSpacing: 0,
+            ),
+          ],
         ),
       ),
     );

@@ -12,7 +12,7 @@ const STARTING_SCORES = {
 const POINTS_PER_WORD = 30;
 const POINTS_PER_SECOND = 1;
 const POINTS_PER_ERROR = 50;
-const POINTS_PER_HINT = 80;
+const POINTS_PER_HINT = 0;
 const POINTS_PER_SKIP = 160;
 const CORS_HEADERS = {
   "access-control-allow-origin": "*",
@@ -190,7 +190,7 @@ function normalizeEntry(entry) {
   const skipsUsed = Number(entry?.skipsUsed ?? 0);
   const completedAt = new Date(entry?.completedAt ?? Date.now());
 
-  if (!/^[A-Z]{3}$/.test(initials)) {
+  if (!/^[A-Z]{3,5}$/.test(initials)) {
     return null;
   }
   if (!LEVELS.has(level)) {

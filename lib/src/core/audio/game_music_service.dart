@@ -189,7 +189,6 @@ class GameMusicService {
   }
 
   Future<void> setEffectsEnabled(bool value) async {
-    await initialize();
     _effectsEnabled = value;
 
     try {
@@ -202,6 +201,8 @@ class GameMusicService {
     if (value || kIsWeb) {
       return;
     }
+
+    await initialize();
 
     try {
       await _wordVictoryPlayer.stop();
@@ -253,7 +254,7 @@ class GameMusicService {
   Future<void> stop() async {
     _pausedByGame = false;
 
-    if (!_effectsEnabled || kIsWeb) {
+    if (kIsWeb) {
       return;
     }
 
@@ -322,9 +323,13 @@ class GameMusicService {
   }
 
   Future<void> _playEffect(AudioPlayer player, String asset) async {
+    if (!_effectsEnabled || kIsWeb) {
+      return;
+    }
+
     await initialize();
 
-    if (kIsWeb) {
+    if (!_effectsEnabled || kIsWeb) {
       return;
     }
 
