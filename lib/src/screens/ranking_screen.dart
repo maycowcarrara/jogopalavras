@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:jogopalavras/src/game/game_level.dart';
 import 'package:jogopalavras/src/game/ranking_store.dart';
@@ -41,7 +40,7 @@ class RankingScreen extends StatelessWidget {
             'Ranking',
             style: TextStyle(fontWeight: FontWeight.w900),
           ),
-          actions: const [_SignatureActionButton()],
+          actions: const [AppOptionsControl()],
           bottom: TabBar(
             labelColor: AppTheme.midnight,
             indicatorColor: AppTheme.pressRed,
@@ -57,6 +56,7 @@ class RankingScreen extends StatelessWidget {
         body: AppBackdrop(
           primary: AppTheme.pressBlue,
           secondary: AppTheme.pressRed,
+          showOptionsControl: false,
           child: SafeArea(
             top: false,
             child: TabBarView(
@@ -81,140 +81,6 @@ class RankingScreen extends StatelessWidget {
           ),
         ),
       ),
-    );
-  }
-}
-
-class _SignatureActionButton extends StatelessWidget {
-  const _SignatureActionButton();
-
-  @override
-  Widget build(BuildContext context) {
-    return Tooltip(
-      message: 'Alterar assinatura',
-      child: IconButton(
-        onPressed: () async {
-          final currentInitials = await RankingStore.instance
-              .loadLastInitials();
-          if (!context.mounted) {
-            return;
-          }
-
-          final nextInitials = await showDialog<String>(
-            context: context,
-            builder: (_) => _SignatureDialog(initialInitials: currentInitials),
-          );
-          if (nextInitials == null || !context.mounted) {
-            return;
-          }
-
-          await RankingStore.instance.saveLastInitials(nextInitials);
-          if (!context.mounted) {
-            return;
-          }
-
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Assinatura atualizada para $nextInitials.'),
-            ),
-          );
-        },
-        icon: const Icon(Icons.badge_rounded),
-      ),
-    );
-  }
-}
-
-class _SignatureDialog extends StatefulWidget {
-  const _SignatureDialog({required this.initialInitials});
-
-  final String initialInitials;
-
-  @override
-  State<_SignatureDialog> createState() => _SignatureDialogState();
-}
-
-class _SignatureDialogState extends State<_SignatureDialog> {
-  late final TextEditingController _controller;
-  String _initials = '';
-
-  @override
-  void initState() {
-    super.initState();
-    _initials = widget.initialInitials;
-    _controller = TextEditingController(text: _initials);
-    _controller.selection = TextSelection.collapsed(offset: _initials.length);
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  void _handleChanged(String value) {
-    final nextInitials = value.toUpperCase();
-    if (_controller.text != nextInitials) {
-      _controller.value = TextEditingValue(
-        text: nextInitials,
-        selection: TextSelection.collapsed(offset: nextInitials.length),
-      );
-    }
-
-    setState(() {
-      _initials = nextInitials;
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final canSave = _initials.length >= 3 && _initials.length <= 5;
-
-    return AlertDialog(
-      backgroundColor: AppTheme.card,
-      shape: RoundedRectangleBorder(
-        side: const BorderSide(color: AppTheme.rule),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      title: const Text(
-        'Assinatura',
-        style: TextStyle(fontWeight: FontWeight.w900),
-      ),
-      content: TextField(
-        controller: _controller,
-        autofocus: true,
-        textAlign: TextAlign.center,
-        textCapitalization: TextCapitalization.characters,
-        maxLength: 5,
-        inputFormatters: [
-          FilteringTextInputFormatter.allow(RegExp('[a-zA-Z]')),
-          LengthLimitingTextInputFormatter(5),
-        ],
-        style: const TextStyle(
-          fontSize: 28,
-          fontWeight: FontWeight.w900,
-          letterSpacing: 4,
-        ),
-        decoration: const InputDecoration(
-          counterText: '',
-          hintText: 'MRC',
-          helperText: 'Use de 3 a 5 letras.',
-          border: OutlineInputBorder(),
-        ),
-        onChanged: _handleChanged,
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancelar'),
-        ),
-        ElevatedButton(
-          onPressed: canSave
-              ? () => Navigator.of(context).pop(_initials)
-              : null,
-          child: const Text('Salvar'),
-        ),
-      ],
     );
   }
 }

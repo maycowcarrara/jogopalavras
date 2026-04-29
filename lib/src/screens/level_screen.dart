@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:jogopalavras/src/game/campaign_progress_store.dart';
@@ -21,6 +23,13 @@ class LevelScreen extends StatefulWidget {
 
 class _LevelScreenState extends State<LevelScreen> {
   late Future<_CampaignSnapshot> _progressFuture = _loadCampaignSnapshot();
+  final ScrollController _scrollController = ScrollController();
+  final Map<GameLevel, GlobalKey> _chapterKeys = {
+    GameLevel.easy: GlobalKey(),
+    GameLevel.medium: GlobalKey(),
+    GameLevel.hard: GlobalKey(),
+  };
+  String? _lastAutoScrollTarget;
 
   void _refreshProgress() {
     setState(() {
@@ -48,11 +57,48 @@ class _LevelScreenState extends State<LevelScreen> {
   }
 
   @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _scheduleAutoScroll(_CampaignSnapshot campaign) {
+    final targetLevel = campaign.currentLevel;
+    final signature =
+        '${targetLevel.name}:${campaign.completedSubStagesFor(targetLevel)}';
+    if (_lastAutoScrollTarget == signature) {
+      return;
+    }
+
+    _lastAutoScrollTarget = signature;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+
+      final context = _chapterKeys[targetLevel]?.currentContext;
+      if (context == null) {
+        return;
+      }
+
+      Scrollable.ensureVisible(
+        context,
+        duration: const Duration(milliseconds: 520),
+        curve: Curves.easeOutCubic,
+        alignment: 0.16,
+      );
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
     return FutureBuilder<_CampaignSnapshot>(
       future: _progressFuture,
       builder: (context, snapshot) {
         final campaign = snapshot.data ?? _CampaignSnapshot.empty();
+        if (snapshot.hasData) {
+          _scheduleAutoScroll(campaign);
+        }
 
         return Scaffold(
           bottomNavigationBar: const AdBannerSlot(
@@ -64,43 +110,20 @@ class _LevelScreenState extends State<LevelScreen> {
             secondary: AppTheme.pressRed,
             topRightActions: const [_RankingActionButton()],
             child: SafeArea(
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  const padding = EdgeInsets.fromLTRB(18, 4, 18, 18);
-                  final shouldScroll = constraints.maxHeight < 720;
-
-                  if (shouldScroll) {
-                    return ListView(
-                      padding: padding,
-                      children: [
-                        const _LevelHero(),
-                        const SizedBox(height: 14),
-                        _LevelList(
-                          expanded: false,
-                          campaign: campaign,
-                          onProgressChanged: _refreshProgress,
-                        ),
-                      ],
-                    );
-                  }
-
-                  return Padding(
-                    padding: padding,
-                    child: Column(
-                      children: [
-                        const _LevelHero(),
-                        const SizedBox(height: 14),
-                        Expanded(
-                          child: _LevelList(
-                            expanded: true,
-                            campaign: campaign,
-                            onProgressChanged: _refreshProgress,
-                          ),
-                        ),
-                      ],
-                    ),
-                  );
-                },
+              child: ListView(
+                controller: _scrollController,
+                padding: const EdgeInsets.fromLTRB(18, 6, 18, 18),
+                children: [
+                  const _MapHeader(),
+                  const SizedBox(height: 12),
+                  _NextObjectiveBanner(campaign: campaign),
+                  const SizedBox(height: 16),
+                  _CampaignPath(
+                    campaign: campaign,
+                    chapterKeys: _chapterKeys,
+                    onProgressChanged: _refreshProgress,
+                  ),
+                ],
               ),
             ),
           ),
@@ -110,56 +133,40 @@ class _LevelScreenState extends State<LevelScreen> {
   }
 }
 
-class _LevelHero extends StatelessWidget {
-  const _LevelHero();
+class _MapHeader extends StatelessWidget {
+  const _MapHeader();
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    return RevealOnMount(
-      child: Container(
-        padding: const EdgeInsets.fromLTRB(18, 16, 18, 14),
-        decoration: BoxDecoration(
-          color: AppTheme.midnight,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: AppTheme.midnight),
-          boxShadow: [
-            BoxShadow(
-              color: AppTheme.midnight.withValues(alpha: 0.16),
-              blurRadius: 20,
-              offset: const Offset(0, 12),
+    return Padding(
+      padding: const EdgeInsets.only(right: 94),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Mapa da edição',
+            style: theme.textTheme.headlineSmall?.copyWith(
+              color: AppTheme.midnight,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 0,
+              fontSize: 26,
+              height: 1,
             ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Escolha a editoria',
-              style: theme.textTheme.headlineSmall?.copyWith(
-                color: Colors.white,
-                fontWeight: FontWeight.w900,
-                letterSpacing: 0,
-                fontSize: 24,
-              ),
+          ),
+          const SizedBox(height: 5),
+          Text(
+            'Avance pelas partidas de cada editoria até entregar o jornal.',
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: AppTheme.ink.withValues(alpha: 0.72),
+              fontWeight: FontWeight.w700,
+              height: 1.16,
             ),
-            const SizedBox(height: 4),
-            Text(
-              'Avance pela edição: pauta, redação, fechamento e entrega.',
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: Colors.white.withValues(alpha: 0.86),
-                height: 1.18,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-            const SizedBox(height: 10),
-            const _HeroSummary(
-              icon: Icons.newspaper_rounded,
-              label: 'Campanha editorial com Pauta Livre sempre disponível',
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -206,258 +213,618 @@ class _RankingActionButton extends StatelessWidget {
   }
 }
 
-class _LevelList extends StatelessWidget {
-  const _LevelList({
-    required this.expanded,
+class _NextObjectiveBanner extends StatelessWidget {
+  const _NextObjectiveBanner({required this.campaign});
+
+  final _CampaignSnapshot campaign;
+
+  @override
+  Widget build(BuildContext context) {
+    final level = campaign.currentLevel;
+    final accent = _chapterAccent(level);
+    final current = campaign.currentSubStageFor(level);
+    final total = campaign.subStageCountFor(level);
+    final remainingWords = campaign.remainingWordsFor(level);
+    final title = campaign.completedGame
+        ? 'Edição entregue'
+        : '${_nextObjectivePrefix(level)} $current/$total';
+    final subtitle = campaign.completedGame
+        ? 'Você concluiu todas as fases da campanha.'
+        : _nextObjectiveSubtitle(level, remainingWords);
+
+    return Material(
+      color: AppTheme.midnight,
+      borderRadius: BorderRadius.circular(8),
+      elevation: 7,
+      shadowColor: AppTheme.midnight.withValues(alpha: 0.18),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(13, 12, 13, 12),
+        child: Row(
+          children: [
+            Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                color: accent,
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white, width: 2),
+              ),
+              child: Icon(
+                campaign.completedGame
+                    ? Icons.local_shipping_rounded
+                    : Icons.flag_rounded,
+                color: Colors.white,
+                size: 21,
+              ),
+            ),
+            const SizedBox(width: 11),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w900,
+                      height: 1,
+                      letterSpacing: 0,
+                    ),
+                  ),
+                  const SizedBox(height: 5),
+                  Text(
+                    subtitle,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.75),
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w700,
+                      height: 1.16,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            _ProgressBadge(label: '${campaign.totalPercent}%', color: accent),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CampaignPath extends StatelessWidget {
+  const _CampaignPath({
     required this.campaign,
+    required this.chapterKeys,
     required this.onProgressChanged,
   });
 
-  final bool expanded;
   final _CampaignSnapshot campaign;
+  final Map<GameLevel, GlobalKey> chapterKeys;
   final VoidCallback onProgressChanged;
 
   @override
   Widget build(BuildContext context) {
-    const campaignLevels = [GameLevel.easy, GameLevel.medium, GameLevel.hard];
-    final campaignCards = [
-      for (var index = 0; index < campaignLevels.length; index++)
-        RevealOnMount(
-          delay: Duration(milliseconds: 100 + (index * 70)),
-          child: _LevelCard(
-            level: campaignLevels[index],
-            stageNumber: index + 1,
-            prominent: expanded,
-            unlocked: campaign.progress.isUnlocked(campaignLevels[index]),
-            completed: campaign.progress.isCompleted(campaignLevels[index]),
-            progressPercent: campaign.percentFor(campaignLevels[index]),
-            onProgressChanged: onProgressChanged,
-          ),
-        ),
-    ];
-    final freeCard = RevealOnMount(
-      delay: const Duration(milliseconds: 330),
-      child: _LevelCard(
-        level: GameLevel.pautaLivre,
-        prominent: expanded,
-        unlocked: true,
-        completed: false,
-        progressPercent: null,
-        onProgressChanged: onProgressChanged,
-      ),
-    );
-
-    if (!expanded) {
-      return Column(
-        children: [
-          for (final card in campaignCards) ...[
-            card,
-            const SizedBox(height: 10),
-          ],
-          freeCard,
-        ],
-      );
-    }
+    const levels = [GameLevel.easy, GameLevel.medium, GameLevel.hard];
 
     return Column(
       children: [
-        for (final card in campaignCards) ...[
-          Expanded(child: card),
-          const SizedBox(height: 10),
+        for (var index = 0; index < levels.length; index++) ...[
+          _EditorialChapterMarker(
+            level: levels[index],
+            rangeLabel: campaign.stageRangeLabel(levels[index]),
+            unlocked: campaign.progress.isUnlocked(levels[index]),
+            completed: campaign.progress.isCompleted(levels[index]),
+          ),
+          const SizedBox(height: 8),
+          RevealOnMount(
+            delay: Duration(milliseconds: 90 + (index * 70)),
+            child: _LevelChapter(
+              key: chapterKeys[levels[index]],
+              level: levels[index],
+              campaign: campaign,
+              onProgressChanged: onProgressChanged,
+            ),
+          ),
+          _ChapterConnector(
+            completed: campaign.progress.isCompleted(levels[index]),
+          ),
         ],
-        Expanded(child: freeCard),
+        RevealOnMount(
+          delay: const Duration(milliseconds: 330),
+          child: _DeliveryChapter(completed: campaign.completedGame),
+        ),
+        const SizedBox(height: 14),
+        RevealOnMount(
+          delay: const Duration(milliseconds: 400),
+          child: _FreePlayDock(onProgressChanged: onProgressChanged),
+        ),
       ],
     );
   }
 }
 
-class _LevelCard extends StatelessWidget {
-  const _LevelCard({
+class _EditorialChapterMarker extends StatelessWidget {
+  const _EditorialChapterMarker({
     required this.level,
+    required this.rangeLabel,
     required this.unlocked,
     required this.completed,
-    required this.progressPercent,
-    required this.onProgressChanged,
-    this.stageNumber,
-    this.prominent = false,
   });
 
   final GameLevel level;
-  final int? stageNumber;
+  final String rangeLabel;
   final bool unlocked;
   final bool completed;
-  final int? progressPercent;
-  final VoidCallback onProgressChanged;
-  final bool prominent;
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final iconSize = prominent ? 48.0 : 42.0;
-    final accent = unlocked
-        ? level.accent
-        : AppTheme.ink.withValues(alpha: 0.32);
+    final accent = unlocked ? _chapterAccent(level) : AppTheme.rule;
+
+    return Row(
+      children: [
+        Expanded(
+          child: Divider(
+            color: accent.withValues(alpha: unlocked ? 0.62 : 0.42),
+            thickness: 1,
+          ),
+        ),
+        const SizedBox(width: 10),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            color: AppTheme.card.withValues(alpha: 0.92),
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(color: accent.withValues(alpha: 0.38)),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                completed
+                    ? Icons.task_alt_rounded
+                    : unlocked
+                    ? Icons.newspaper_rounded
+                    : Icons.lock_rounded,
+                color: accent,
+                size: 15,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                '${_editionLabel(level)} • $rangeLabel',
+                style: TextStyle(
+                  color: AppTheme.ink.withValues(alpha: unlocked ? 0.82 : 0.5),
+                  fontSize: 11,
+                  fontWeight: FontWeight.w900,
+                  height: 1,
+                  letterSpacing: 0,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Divider(
+            color: accent.withValues(alpha: unlocked ? 0.62 : 0.42),
+            thickness: 1,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _LevelChapter extends StatelessWidget {
+  const _LevelChapter({
+    super.key,
+    required this.level,
+    required this.campaign,
+    required this.onProgressChanged,
+  });
+
+  final GameLevel level;
+  final _CampaignSnapshot campaign;
+  final VoidCallback onProgressChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final stageCount = campaign.subStageCountFor(level);
+    final completedStages = campaign.completedSubStagesFor(level);
+    final currentStage = math.min(completedStages + 1, stageCount);
+    final unlocked = campaign.progress.isUnlocked(level);
+    final completed = campaign.progress.isCompleted(level);
+    final percent = campaign.percentFor(level);
+    final accent = unlocked ? _chapterAccent(level) : AppTheme.rule;
 
     return Material(
-      color: AppTheme.card.withValues(alpha: unlocked ? 0.96 : 0.72),
-      borderRadius: BorderRadius.circular(10),
+      color: AppTheme.card.withValues(alpha: unlocked ? 0.98 : 0.76),
+      borderRadius: BorderRadius.circular(8),
+      elevation: unlocked ? 6 : 1,
+      shadowColor: AppTheme.midnight.withValues(alpha: 0.12),
       child: Ink(
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(8),
           border: Border.all(
             color: completed
-                ? level.accent.withValues(alpha: 0.72)
+                ? accent.withValues(alpha: 0.72)
                 : AppTheme.rule.withValues(alpha: 0.9),
           ),
-          boxShadow: [
-            BoxShadow(
-              color: AppTheme.midnight.withValues(alpha: 0.07),
-              blurRadius: 10,
-              offset: const Offset(0, 5),
-            ),
-          ],
         ),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(10),
-          onTap: unlocked
-              ? () async {
-                  await Navigator.of(context).push(
-                    appPageRoute<void>(
-                      settings: RouteSettings(name: '/game/${level.name}'),
-                      builder: (_) => GameScreen(level: level),
-                    ),
-                  );
-                  onProgressChanged();
-                }
-              : null,
-          child: Padding(
-            padding: EdgeInsets.symmetric(
-              horizontal: prominent ? 16 : 14,
-              vertical: prominent ? 16 : 12,
-            ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                Container(
-                  width: iconSize,
-                  height: iconSize,
-                  decoration: BoxDecoration(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(14, 13, 14, 14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _ChapterSeal(
+                    index: _chapterIndex(level),
                     color: accent,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Icon(
-                    completed
+                    icon: completed
                         ? Icons.done_rounded
                         : unlocked
                         ? level.icon
                         : Icons.lock_rounded,
-                    color: Colors.white,
-                    size: prominent ? 24 : 22,
                   ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              _stageTitle(level, stageNumber),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: theme.textTheme.titleMedium?.copyWith(
-                                color: unlocked
-                                    ? AppTheme.ink
-                                    : AppTheme.ink.withValues(alpha: 0.5),
-                                fontWeight: FontWeight.w900,
-                                letterSpacing: 0,
-                              ),
-                            ),
+                  const SizedBox(width: 11),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          campaign.stageRangeLabel(level),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: AppTheme.ink.withValues(alpha: 0.58),
+                            fontSize: 11,
+                            fontWeight: FontWeight.w900,
+                            height: 1,
                           ),
-                          const SizedBox(width: 8),
-                          Text(
-                            completed
-                                ? 'Concluído'
-                                : unlocked
-                                ? progressPercent == null
-                                      ? level.wordSizeShortLabel
-                                      : '$progressPercent%'
-                                : 'Bloqueado',
-                            style: TextStyle(
-                              color: accent,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w900,
-                              height: 1,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        _stageSubtitle(level, unlocked),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: AppTheme.ink.withValues(
-                            alpha: unlocked ? 0.78 : 0.52,
-                          ),
-                          fontSize: 13,
-                          height: 1.1,
-                          fontWeight: FontWeight.w500,
                         ),
-                      ),
-                      const SizedBox(height: 6),
-                      Wrap(
-                        spacing: 0,
-                        runSpacing: 2,
-                        children: [
-                          Text(
-                            _goalLabel(level),
-                            style: TextStyle(
-                              color: AppTheme.ink.withValues(alpha: 0.72),
-                              fontSize: 12,
-                              height: 1.12,
-                              fontWeight: FontWeight.w700,
-                            ),
+                        const SizedBox(height: 4),
+                        Text(
+                          _chapterTitle(level),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: unlocked
+                                ? AppTheme.ink
+                                : AppTheme.ink.withValues(alpha: 0.52),
+                            fontSize: 20,
+                            fontWeight: FontWeight.w900,
+                            height: 1,
+                            letterSpacing: 0,
                           ),
-                          Text(
-                            ' • ',
-                            style: TextStyle(
-                              color: AppTheme.ink.withValues(alpha: 0.52),
-                              fontSize: 12,
-                              height: 1.12,
-                              fontWeight: FontWeight.w800,
+                        ),
+                        const SizedBox(height: 5),
+                        Text(
+                          unlocked
+                              ? _chapterPreview(level, stageCount)
+                              : _lockedPreview(level),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: AppTheme.ink.withValues(
+                              alpha: unlocked ? 0.72 : 0.5,
                             ),
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w700,
+                            height: 1.15,
                           ),
-                          Text(
-                            _ctaLabel(level, unlocked, completed),
-                            style: TextStyle(
-                              color: AppTheme.ink.withValues(
-                                alpha: unlocked ? 0.9 : 0.52,
-                              ),
-                              fontSize: 12,
-                              height: 1.12,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-                const SizedBox(width: 10),
-                Icon(
-                  unlocked ? Icons.arrow_forward_rounded : Icons.lock_rounded,
-                  color: AppTheme.midnight.withValues(
-                    alpha: unlocked ? 0.72 : 0.32,
+                  const SizedBox(width: 8),
+                  _ProgressBadge(
+                    label: completed ? '100%' : unlocked ? '$percent%' : 'LOCK',
+                    color: accent,
                   ),
-                  size: 22,
+                ],
+              ),
+              const SizedBox(height: 12),
+              _SubStageTrail(
+                stageCount: stageCount,
+                completedStages: completedStages,
+                currentStage: currentStage,
+                unlocked: unlocked,
+                completed: completed,
+                accent: accent,
+                itemLabel: _subStageLabel(level),
+                onStart: () => _startLevel(context),
+              ),
+              if (completed) ...[
+                const SizedBox(height: 10),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: _PublishedStamp(label: 'PUBLICADO', color: accent),
                 ),
               ],
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  key: ValueKey<String>('stage_${level.name}'),
+                  onPressed: unlocked ? () => _startLevel(context) : null,
+                  icon: Icon(
+                    completed
+                        ? Icons.replay_rounded
+                        : Icons.play_arrow_rounded,
+                    size: 20,
+                  ),
+                  label: Text(
+                    completed
+                        ? 'Revisitar ${_chapterTitle(level)}'
+                        : unlocked
+                        ? 'Jogar ${_subStageLabel(level).toLowerCase()} $currentStage de $stageCount'
+                        : 'Bloqueado',
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _startLevel(BuildContext context) async {
+    await Navigator.of(context).push(
+      appPageRoute<void>(
+        settings: RouteSettings(name: '/game/${level.name}'),
+        builder: (_) => GameScreen(level: level),
+      ),
+    );
+    onProgressChanged();
+  }
+}
+
+class _SubStageTrail extends StatelessWidget {
+  const _SubStageTrail({
+    required this.stageCount,
+    required this.completedStages,
+    required this.currentStage,
+    required this.unlocked,
+    required this.completed,
+    required this.accent,
+    required this.itemLabel,
+    required this.onStart,
+  });
+
+  final int stageCount;
+  final int completedStages;
+  final int currentStage;
+  final bool unlocked;
+  final bool completed;
+  final Color accent;
+  final String itemLabel;
+  final VoidCallback onStart;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth;
+        final columns = math.max(5, math.min(9, (width / 40).floor())).toInt();
+        final rows = (stageCount / columns).ceil();
+        final height = math.max(42.0, ((rows - 1) * 45) + 42).toDouble();
+        final centers = _trailCenters(
+          width: width,
+          stageCount: stageCount,
+          columns: columns,
+        );
+
+        return SizedBox(
+          height: height,
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Positioned.fill(
+                child: CustomPaint(
+                  painter: _SubStagePathPainter(
+                    centers: centers,
+                    completedStages: completed ? stageCount : completedStages,
+                    color: accent,
+                  ),
+                ),
+              ),
+              for (var number = 1; number <= stageCount; number++)
+                _positionedSubStageDot(number, centers[number - 1]),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _positionedSubStageDot(int number, Offset center) {
+    final isCurrent = unlocked && !completed && number == currentStage;
+    final size = isCurrent ? 38.0 : 32.0;
+
+    return Positioned(
+      left: center.dx - (size / 2),
+      top: center.dy - (size / 2),
+      width: size,
+      height: size,
+      child: _SubStageDot(
+        number: number,
+        itemLabel: itemLabel,
+        completed: completed || number <= completedStages,
+        current: isCurrent,
+        locked: !unlocked || (!completed && number > currentStage),
+        color: accent,
+        onTap: unlocked && (completed || number <= currentStage)
+            ? onStart
+            : null,
+      ),
+    );
+  }
+}
+
+List<Offset> _trailCenters({
+  required double width,
+  required int stageCount,
+  required int columns,
+}) {
+  const top = 21.0;
+  const rowHeight = 45.0;
+  final left = 18.0;
+  final right = math.max(left, width - 18);
+  final step = columns <= 1 ? 0.0 : (right - left) / (columns - 1);
+
+  return [
+    for (var index = 0; index < stageCount; index++)
+      () {
+        final row = index ~/ columns;
+        final column = index % columns;
+        final reverse = row.isOdd;
+        final visualColumn = reverse ? columns - 1 - column : column;
+        return Offset(left + (visualColumn * step), top + (row * rowHeight));
+      }(),
+  ];
+}
+
+class _SubStagePathPainter extends CustomPainter {
+  const _SubStagePathPainter({
+    required this.centers,
+    required this.completedStages,
+    required this.color,
+  });
+
+  final List<Offset> centers;
+  final int completedStages;
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (centers.length < 2) {
+      return;
+    }
+
+    final basePaint = Paint()
+      ..color = AppTheme.rule.withValues(alpha: 0.72)
+      ..strokeWidth = 4
+      ..strokeCap = StrokeCap.round
+      ..style = PaintingStyle.stroke;
+    final activePaint = Paint()
+      ..color = color.withValues(alpha: 0.88)
+      ..strokeWidth = 4
+      ..strokeCap = StrokeCap.round
+      ..style = PaintingStyle.stroke;
+
+    for (var index = 1; index < centers.length; index++) {
+      final paint = index <= completedStages ? activePaint : basePaint;
+      final previous = centers[index - 1];
+      final current = centers[index];
+      final path = Path()..moveTo(previous.dx, previous.dy);
+      final controlX = (previous.dx + current.dx) / 2;
+      path.cubicTo(
+        controlX,
+        previous.dy,
+        controlX,
+        current.dy,
+        current.dx,
+        current.dy,
+      );
+      canvas.drawPath(path, paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _SubStagePathPainter oldDelegate) {
+    return oldDelegate.centers != centers ||
+        oldDelegate.completedStages != completedStages ||
+        oldDelegate.color != color;
+  }
+}
+
+class _SubStageDot extends StatelessWidget {
+  const _SubStageDot({
+    required this.number,
+    required this.itemLabel,
+    required this.completed,
+    required this.current,
+    required this.locked,
+    required this.color,
+    required this.onTap,
+  });
+
+  final int number;
+  final String itemLabel;
+  final bool completed;
+  final bool current;
+  final bool locked;
+  final Color color;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final background = completed
+        ? color
+        : current
+        ? AppTheme.card
+        : AppTheme.midnight.withValues(alpha: 0.08);
+    final foreground = completed
+        ? Colors.white
+        : locked
+        ? AppTheme.ink.withValues(alpha: 0.32)
+        : color;
+
+    return Tooltip(
+      message: '$itemLabel $number',
+      child: Material(
+        color: background,
+        shape: const CircleBorder(),
+        child: InkWell(
+          onTap: onTap,
+          customBorder: const CircleBorder(),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            width: current ? 38 : 32,
+            height: current ? 38 : 32,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: current ? color : AppTheme.rule.withValues(alpha: 0.55),
+                width: current ? 3 : 1,
+              ),
             ),
+            child: completed
+                ? Transform.rotate(
+                    angle: -0.16,
+                    child: const Text(
+                      'OK',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w900,
+                        height: 1,
+                        letterSpacing: 0,
+                      ),
+                    ),
+                  )
+                : Text(
+                    '$number',
+                    maxLines: 1,
+                    style: TextStyle(
+                      color: foreground,
+                      fontSize: number >= 100 ? 9 : 10.5,
+                      fontWeight: FontWeight.w900,
+                      height: 1,
+                      letterSpacing: 0,
+                    ),
+                  ),
           ),
         ),
       ),
@@ -465,86 +832,329 @@ class _LevelCard extends StatelessWidget {
   }
 }
 
-String _stageTitle(GameLevel level, int? stageNumber) {
-  final prefix = stageNumber == null ? 'Plantão' : 'Fase $stageNumber';
-  final title = switch (level) {
-    GameLevel.easy => 'Pauta',
-    GameLevel.medium => 'Redação',
-    GameLevel.hard => 'Fechamento',
-    GameLevel.pautaLivre => 'Pauta Livre',
-  };
+class _ChapterConnector extends StatelessWidget {
+  const _ChapterConnector({required this.completed});
 
-  return '$prefix: $title';
+  final bool completed;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 34,
+      child: Center(
+        child: Container(
+          width: 7,
+          height: 34,
+          decoration: BoxDecoration(
+            color: completed
+                ? AppTheme.pressGreen
+                : AppTheme.rule.withValues(alpha: 0.8),
+            borderRadius: BorderRadius.circular(999),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
-String _stageSubtitle(GameLevel level, bool unlocked) {
-  if (!unlocked) {
-    return 'Conclua a etapa anterior para abrir este caderno.';
-  }
+class _DeliveryChapter extends StatelessWidget {
+  const _DeliveryChapter({required this.completed});
 
-  return switch (level) {
-    GameLevel.easy => 'Comece por notas curtas e chamadas rápidas.',
-    GameLevel.medium => 'Transforme a apuração em matéria principal.',
-    GameLevel.hard => 'Feche a edição com palavras mais longas.',
-    GameLevel.pautaLivre => 'Misture todas as editorias em uma rodada solta.',
-  };
+  final bool completed;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = completed ? AppTheme.pressGold : AppTheme.rule;
+
+    return TweenAnimationBuilder<double>(
+      tween: Tween<double>(begin: completed ? 0.96 : 1, end: 1),
+      duration: const Duration(milliseconds: 420),
+      curve: Curves.easeOutBack,
+      builder: (context, scale, child) {
+        return Transform.scale(scale: scale, child: child);
+      },
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: AppTheme.midnight.withValues(alpha: completed ? 1 : 0.72),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: color.withValues(alpha: 0.7)),
+          boxShadow: completed
+              ? [
+                  BoxShadow(
+                    color: AppTheme.pressGold.withValues(alpha: 0.22),
+                    blurRadius: 22,
+                    offset: const Offset(0, 10),
+                  ),
+                ]
+              : null,
+        ),
+        child: Row(
+          children: [
+            _ChapterSeal(
+              index: 4,
+              color: color,
+              icon: completed
+                  ? Icons.local_shipping_rounded
+                  : Icons.lock_rounded,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    completed ? 'Final concluído' : 'Destino final',
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.72),
+                      fontSize: 11,
+                      fontWeight: FontWeight.w900,
+                      height: 1,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'Entrega',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w900,
+                      height: 1,
+                    ),
+                  ),
+                  const SizedBox(height: 5),
+                  Text(
+                    completed
+                        ? 'Edição entregue. Campanha fechada.'
+                        : 'Complete o Fechamento para entregar o jornal.',
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.74),
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w700,
+                      height: 1.15,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (completed) ...[
+              const SizedBox(width: 10),
+              _PublishedStamp(
+                label: 'ENTREGUE',
+                color: AppTheme.pressGold,
+                dark: true,
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
 }
 
-String _ctaLabel(GameLevel level, bool unlocked, bool completed) {
-  if (!unlocked) {
-    return 'Aguardando liberação';
-  }
+class _PublishedStamp extends StatelessWidget {
+  const _PublishedStamp({
+    required this.label,
+    required this.color,
+    this.dark = false,
+  });
 
-  if (completed && level != GameLevel.pautaLivre) {
-    return 'Revisitar fase';
-  }
-
-  return switch (level) {
-    GameLevel.easy => 'Começar no fácil',
-    GameLevel.medium => 'Encara o médio',
-    GameLevel.hard => 'Partir para o difícil',
-    GameLevel.pautaLivre => 'Abrir pauta livre',
-  };
-}
-
-String _goalLabel(GameLevel level) => switch (level) {
-  GameLevel.easy => 'Ritmo de pauta',
-  GameLevel.medium => 'Texto em produção',
-  GameLevel.hard => 'Edição final',
-  GameLevel.pautaLivre => 'Todos os níveis',
-};
-
-class _HeroSummary extends StatelessWidget {
-  const _HeroSummary({required this.icon, required this.label});
-
-  final IconData icon;
   final String label;
+  final Color color;
+  final bool dark;
+
+  @override
+  Widget build(BuildContext context) {
+    return Transform.rotate(
+      angle: -0.08,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+        decoration: BoxDecoration(
+          color: dark ? Colors.white.withValues(alpha: 0.08) : Colors.white,
+          borderRadius: BorderRadius.circular(4),
+          border: Border.all(color: color.withValues(alpha: 0.7), width: 1.4),
+        ),
+        child: Text(
+          label,
+          maxLines: 1,
+          style: TextStyle(
+            color: dark ? Colors.white : color,
+            fontSize: 10.5,
+            fontWeight: FontWeight.w900,
+            height: 1,
+            letterSpacing: 0.8,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _FreePlayDock extends StatelessWidget {
+  const _FreePlayDock({required this.onProgressChanged});
+
+  final VoidCallback onProgressChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: AppTheme.midnight,
+      borderRadius: BorderRadius.circular(8),
+      elevation: 8,
+      shadowColor: AppTheme.midnight.withValues(alpha: 0.24),
+      child: InkWell(
+        key: const ValueKey<String>('stage_pautaLivre'),
+        borderRadius: BorderRadius.circular(8),
+        onTap: () async {
+          await Navigator.of(context).push(
+            appPageRoute<void>(
+              settings: const RouteSettings(name: '/game/pautaLivre'),
+              builder: (_) => const GameScreen(level: GameLevel.pautaLivre),
+            ),
+          );
+          onProgressChanged();
+        },
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+          child: Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: AppTheme.pressGold,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(
+                  Icons.dynamic_feed_rounded,
+                  color: Colors.white,
+                  size: 21,
+                ),
+              ),
+              const SizedBox(width: 11),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'Plantão: Pauta Livre',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 16,
+                        height: 1,
+                      ),
+                    ),
+                    SizedBox(height: 4),
+                    Text(
+                      'Rodada solta com todos os cadernos',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: Colors.white70,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 12,
+                        height: 1,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              const Icon(
+                Icons.arrow_forward_rounded,
+                color: Colors.white,
+                size: 22,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ChapterSeal extends StatelessWidget {
+  const _ChapterSeal({
+    required this.index,
+    required this.color,
+    required this.icon,
+  });
+
+  final int index;
+  final Color color;
+  final IconData icon;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
+      width: 48,
+      height: 48,
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
+        color: color,
+        shape: BoxShape.circle,
+        border: Border.all(color: Colors.white, width: 3),
+        boxShadow: [
+          BoxShadow(
+            color: AppTheme.midnight.withValues(alpha: 0.16),
+            blurRadius: 10,
+            offset: const Offset(0, 5),
+          ),
+        ],
       ),
-      child: Row(
+      child: Stack(
+        alignment: Alignment.center,
         children: [
-          Icon(icon, color: Colors.white, size: 18),
-          const SizedBox(width: 8),
-          Expanded(
+          Positioned(
+            top: 4,
+            right: 7,
             child: Text(
-              label,
+              '$index',
               style: const TextStyle(
                 color: Colors.white,
-                fontWeight: FontWeight.w700,
-                fontSize: 13,
-                height: 1.12,
+                fontSize: 10,
+                fontWeight: FontWeight.w900,
+                height: 1,
               ),
             ),
           ),
+          Icon(icon, color: Colors.white, size: 22),
         ],
+      ),
+    );
+  }
+}
+
+class _ProgressBadge extends StatelessWidget {
+  const _ProgressBadge({required this.label, required this.color});
+
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withValues(alpha: 0.36)),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: color,
+          fontSize: 11,
+          fontWeight: FontWeight.w900,
+          height: 1,
+          letterSpacing: 0,
+        ),
       ),
     );
   }
@@ -566,17 +1176,170 @@ class _CampaignSnapshot {
   final CampaignProgress progress;
   final Map<GameLevel, int> usedWordCounts;
 
-  int? percentFor(GameLevel level) {
-    if (level == GameLevel.pautaLivre) {
-      return null;
+  bool get completedGame => progress.isCompleted(GameLevel.hard);
+
+  GameLevel get currentLevel {
+    if (!progress.isCompleted(GameLevel.easy)) {
+      return GameLevel.easy;
+    }
+    if (!progress.isCompleted(GameLevel.medium)) {
+      return GameLevel.medium;
+    }
+    return GameLevel.hard;
+  }
+
+  int get totalStageCount =>
+      subStageCountFor(GameLevel.easy) +
+      subStageCountFor(GameLevel.medium) +
+      subStageCountFor(GameLevel.hard);
+
+  int get completedStageCount =>
+      completedSubStagesFor(GameLevel.easy) +
+      completedSubStagesFor(GameLevel.medium) +
+      completedSubStagesFor(GameLevel.hard);
+
+  int get totalPercent {
+    final total = totalStageCount;
+    if (total == 0) {
+      return 0;
     }
 
-    final totalWords = wordBank[level]?.length ?? 0;
+    return ((completedStageCount / total) * 100).floor();
+  }
+
+  int totalWordsFor(GameLevel level) => wordBank[level]?.length ?? 0;
+
+  int subStageCountFor(GameLevel level) {
+    final totalWords = totalWordsFor(level);
     if (totalWords == 0) {
       return 0;
     }
 
-    final usedWords = (usedWordCounts[level] ?? 0).clamp(0, totalWords);
+    return (totalWords / level.targetWordCount).ceil();
+  }
+
+  int completedSubStagesFor(GameLevel level) {
+    final totalWords = totalWordsFor(level);
+    final stageCount = subStageCountFor(level);
+    if (totalWords == 0 || stageCount == 0) {
+      return 0;
+    }
+
+    final usedWords = (usedWordCounts[level] ?? 0).clamp(0, totalWords).toInt();
+    if (usedWords == 0) {
+      return 0;
+    }
+
+    return math.min(stageCount, (usedWords / level.targetWordCount).ceil());
+  }
+
+  int currentSubStageFor(GameLevel level) {
+    final total = subStageCountFor(level);
+    if (total == 0) {
+      return 0;
+    }
+
+    return math.min(completedSubStagesFor(level) + 1, total);
+  }
+
+  int remainingWordsFor(GameLevel level) {
+    final totalWords = totalWordsFor(level);
+    final usedWords = (usedWordCounts[level] ?? 0).clamp(0, totalWords).toInt();
+    return math.max(0, totalWords - usedWords);
+  }
+
+  String stageRangeLabel(GameLevel level) {
+    final start = switch (level) {
+      GameLevel.easy => 1,
+      GameLevel.medium => subStageCountFor(GameLevel.easy) + 1,
+      GameLevel.hard =>
+        subStageCountFor(GameLevel.easy) +
+            subStageCountFor(GameLevel.medium) +
+            1,
+      GameLevel.pautaLivre => 0,
+    };
+    if (level == GameLevel.pautaLivre) {
+      return 'Plantão';
+    }
+
+    final end = start + subStageCountFor(level) - 1;
+    return 'Fases $start-$end';
+  }
+
+  int percentFor(GameLevel level) {
+    final totalWords = totalWordsFor(level);
+    if (totalWords == 0) {
+      return 0;
+    }
+
+    final usedWords = (usedWordCounts[level] ?? 0).clamp(0, totalWords).toInt();
     return ((usedWords / totalWords) * 100).floor();
   }
 }
+
+String _chapterTitle(GameLevel level) => switch (level) {
+  GameLevel.easy => 'Pauta',
+  GameLevel.medium => 'Redação',
+  GameLevel.hard => 'Fechamento',
+  GameLevel.pautaLivre => 'Pauta Livre',
+};
+
+String _chapterPreview(GameLevel level, int stageCount) => switch (level) {
+  GameLevel.easy => '$stageCount pautas curtas antes da Redação.',
+  GameLevel.medium => '$stageCount matérias para chegar ao Fechamento.',
+  GameLevel.hard => '$stageCount páginas finais antes da Entrega.',
+  GameLevel.pautaLivre => 'Rodada solta com todos os cadernos.',
+};
+
+String _nextObjectivePrefix(GameLevel level) => switch (level) {
+  GameLevel.easy => 'Próxima pauta',
+  GameLevel.medium => 'Próxima matéria',
+  GameLevel.hard => 'Próxima página',
+  GameLevel.pautaLivre => 'Próxima rodada',
+};
+
+String _nextObjectiveSubtitle(GameLevel level, int remainingWords) {
+  final target = switch (level) {
+    GameLevel.easy => 'abrir Redação',
+    GameLevel.medium => 'abrir Fechamento',
+    GameLevel.hard => 'entregar a edição',
+    GameLevel.pautaLivre => 'fechar o plantão',
+  };
+
+  return 'Faltam $remainingWords palavras para $target.';
+}
+
+String _editionLabel(GameLevel level) => switch (level) {
+  GameLevel.easy => 'Edição 01 • Caderno de pauta',
+  GameLevel.medium => 'Edição 02 • Mesa de redação',
+  GameLevel.hard => 'Edição 03 • Fechamento',
+  GameLevel.pautaLivre => 'Plantão',
+};
+
+String _subStageLabel(GameLevel level) => switch (level) {
+  GameLevel.easy => 'Página',
+  GameLevel.medium => 'Matéria',
+  GameLevel.hard => 'Prova',
+  GameLevel.pautaLivre => 'Rodada',
+};
+
+String _lockedPreview(GameLevel level) => switch (level) {
+  GameLevel.easy => 'Primeira etapa da redação.',
+  GameLevel.medium => 'Conclua todas as pautas para liberar.',
+  GameLevel.hard => 'Conclua a Redação para liberar.',
+  GameLevel.pautaLivre => 'Sempre disponível.',
+};
+
+int _chapterIndex(GameLevel level) => switch (level) {
+  GameLevel.easy => 1,
+  GameLevel.medium => 2,
+  GameLevel.hard => 3,
+  GameLevel.pautaLivre => 0,
+};
+
+Color _chapterAccent(GameLevel level) => switch (level) {
+  GameLevel.easy => AppTheme.pressGreen,
+  GameLevel.medium => AppTheme.pressBlue,
+  GameLevel.hard => AppTheme.pressRed,
+  GameLevel.pautaLivre => AppTheme.pressGold,
+};

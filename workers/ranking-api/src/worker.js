@@ -48,6 +48,18 @@ export default {
       return handleLogPost(request, env);
     }
 
+    if (url.pathname === "/players") {
+      if (request.method === "GET") {
+        return handlePlayersGet(url, env);
+      }
+
+      if (request.method === "POST") {
+        return handlePlayersPost(request, env);
+      }
+
+      return json({ error: "method_not_allowed" }, 405);
+    }
+
     if (url.pathname !== "/ranking") {
       return json({ error: "not_found" }, 404);
     }
@@ -90,12 +102,74 @@ async function handlePost(request, env) {
     return json({ error: "invalid_entry" }, 400);
   }
 
+  await reserveLegacyInitials(env, [entry]);
   const entries = await readLevel(env, entry.level);
   entries.push(entry);
   const ranking = sortEntries(entries).slice(0, MAX_ENTRIES);
   await env.RANKING_KV.put(keyFor(entry.level), JSON.stringify(ranking));
 
   return json({ entries: ranking }, 201);
+}
+
+async function handlePlayersGet(url, env) {
+  const initials = normalizeInitials(url.searchParams.get("initials"));
+  const ownerId = normalizeOwnerId(url.searchParams.get("ownerId"));
+
+  if (!initials) {
+    return json({ error: "invalid_initials" }, 400);
+  }
+
+  await backfillLegacyInitials(env);
+  const available = await isInitialsAvailable(env, initials, {
+    ownerId,
+    previousInitials: initials,
+  });
+
+  return json({ initials, available });
+}
+
+async function handlePlayersPost(request, env) {
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: "invalid_json" }, 400);
+  }
+
+  const initials = normalizeInitials(body?.initials);
+  const previousInitials = normalizeInitials(body?.previousInitials);
+  const ownerId = normalizeOwnerId(body?.ownerId);
+
+  if (!initials || !ownerId) {
+    return json({ error: "invalid_player" }, 400);
+  }
+
+  await backfillLegacyInitials(env);
+  const available = await isInitialsAvailable(env, initials, {
+    ownerId,
+    previousInitials,
+  });
+  if (!available) {
+    return json({ error: "initials_unavailable" }, 409);
+  }
+
+  const now = new Date().toISOString();
+  await env.RANKING_KV.put(
+    playerKeyFor(initials),
+    JSON.stringify({ initials, ownerId, claimedAt: now }),
+  );
+
+  if (previousInitials && previousInitials !== initials) {
+    const previous = await env.RANKING_KV.get(
+      playerKeyFor(previousInitials),
+      "json",
+    );
+    if (previous?.ownerId === ownerId) {
+      await env.RANKING_KV.delete(playerKeyFor(previousInitials));
+    }
+  }
+
+  return json({ initials, ok: true }, 201);
 }
 
 async function handleAdminLogsGet(url, request, env) {
@@ -180,7 +254,7 @@ async function readLevel(env, level) {
 }
 
 function normalizeEntry(entry) {
-  const initials = String(entry?.initials ?? "").trim().toUpperCase();
+  const initials = normalizeInitials(entry?.initials);
   const level = String(entry?.level ?? "");
   const score = Number(entry?.score);
   const words = Number(entry?.words);
@@ -190,7 +264,7 @@ function normalizeEntry(entry) {
   const skipsUsed = Number(entry?.skipsUsed ?? 0);
   const completedAt = new Date(entry?.completedAt ?? Date.now());
 
-  if (!/^[A-Z]{3,5}$/.test(initials)) {
+  if (!initials) {
     return null;
   }
   if (!LEVELS.has(level)) {
@@ -286,6 +360,77 @@ function sortEntries(entries) {
 
 function keyFor(level) {
   return `ranking:v1:${level}`;
+}
+
+function playerKeyFor(initials) {
+  return `player:v1:${initials}`;
+}
+
+async function backfillLegacyInitials(env) {
+  const entries = (
+    await Promise.all([...LEVELS].map((level) => readLevel(env, level)))
+  ).flat();
+  await reserveLegacyInitials(env, entries);
+}
+
+async function reserveLegacyInitials(env, entries) {
+  const initialsList = [
+    ...new Set(entries.map((entry) => normalizeInitials(entry.initials)).filter(Boolean)),
+  ];
+
+  await Promise.all(
+    initialsList.map(async (initials) => {
+      const key = playerKeyFor(initials);
+      const reservation = await env.RANKING_KV.get(key, "json");
+      if (reservation?.ownerId) {
+        return;
+      }
+
+      await env.RANKING_KV.put(
+        key,
+        JSON.stringify({
+          initials,
+          ownerId: `legacy:${initials}`,
+          claimedAt: new Date().toISOString(),
+          legacy: true,
+        }),
+      );
+    }),
+  );
+}
+
+async function isInitialsAvailable(
+  env,
+  initials,
+  { ownerId, previousInitials } = {},
+) {
+  const reservation = await env.RANKING_KV.get(playerKeyFor(initials), "json");
+  if (reservation?.ownerId && reservation.ownerId !== ownerId) {
+    return false;
+  }
+
+  if (reservation?.ownerId === ownerId) {
+    return true;
+  }
+
+  if (previousInitials === initials) {
+    return true;
+  }
+
+  const entries = (
+    await Promise.all([...LEVELS].map((level) => readLevel(env, level)))
+  ).flat();
+  return !entries.some((entry) => entry.initials === initials);
+}
+
+function normalizeInitials(value) {
+  const initials = String(value ?? "").trim().toUpperCase();
+  return /^[A-Z]{3,5}$/.test(initials) ? initials : "";
+}
+
+function normalizeOwnerId(value) {
+  const ownerId = String(value ?? "").trim();
+  return /^[A-Za-z0-9_-]{16,80}$/.test(ownerId) ? ownerId : "";
 }
 
 async function allowLogRequest(request, env) {

@@ -178,4 +178,45 @@ void main() {
 
     expect(await RankingStore.instance.loadLastInitials(), 'MAYCO');
   });
+
+  test('bloqueia troca de assinatura por trinta dias', () async {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+
+    final first = await RankingStore.instance.updatePlayerInitials(
+      'abc',
+      now: DateTime(2026, 4, 1),
+    );
+    final second = await RankingStore.instance.updatePlayerInitials(
+      'def',
+      now: DateTime(2026, 4, 2),
+    );
+
+    expect(first.saved, isTrue);
+    expect(second.status, InitialsUpdateStatus.cooldown);
+    expect(await RankingStore.instance.loadLastInitials(), 'ABC');
+  });
+
+  test('bloqueia assinatura local ja usada no ranking', () async {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+
+    await RankingStore.instance.saveEntry(
+      RankingEntry(
+        initials: 'JORN',
+        level: GameLevel.easy,
+        score: 150,
+        words: 10,
+        elapsedSeconds: 90,
+        completedAt: DateTime(2026, 4, 28),
+      ),
+    );
+    await RankingStore.instance.saveLastInitials('EDIT');
+
+    final result = await RankingStore.instance.updatePlayerInitials(
+      'jorn',
+      now: DateTime(2026, 5, 30),
+    );
+
+    expect(result.status, InitialsUpdateStatus.unavailable);
+    expect(await RankingStore.instance.loadLastInitials(), 'EDIT');
+  });
 }

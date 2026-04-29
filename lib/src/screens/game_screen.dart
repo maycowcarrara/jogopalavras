@@ -618,20 +618,34 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       return null;
     }
 
-    final initials = lastInitials.isNotEmpty
-        ? lastInitials
-        : await showDialog<String>(
-            context: context,
-            barrierDismissible: false,
-            builder: (_) => _InitialsDialog(
-              score: completedEntry.score,
-              words: completedEntry.words,
-              initialInitials: lastInitials,
-            ),
-          );
+    var initials = lastInitials;
+    while (initials.isEmpty) {
+      final candidate = await showDialog<String>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => _InitialsDialog(
+          score: completedEntry.score,
+          words: completedEntry.words,
+          initialInitials: lastInitials,
+        ),
+      );
 
-    if (initials == null) {
-      return null;
+      if (candidate == null || !mounted) {
+        return null;
+      }
+
+      final result = await RankingStore.instance.updatePlayerInitials(
+        candidate,
+      );
+      if (result.saved) {
+        initials = result.initials ?? candidate;
+        break;
+      }
+
+      await _showInitialsError(result);
+      if (!mounted) {
+        return null;
+      }
     }
 
     return RankingEntry(
@@ -643,6 +657,39 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       completedAt: completedEntry.completedAt,
       errors: completedEntry.errors,
       skipsUsed: completedEntry.skipsUsed,
+    );
+  }
+
+  Future<void> _showInitialsError(InitialsUpdateResult result) async {
+    final message = switch (result.status) {
+      InitialsUpdateStatus.invalid => 'Use de 3 a 5 letras.',
+      InitialsUpdateStatus.unavailable =>
+        'Essa assinatura já está em uso no ranking.',
+      InitialsUpdateStatus.cooldown =>
+        'Você só pode alterar a assinatura a cada 30 dias.',
+      InitialsUpdateStatus.saved => 'Assinatura salva.',
+    };
+
+    await showDialog<void>(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: AppTheme.card,
+        shape: RoundedRectangleBorder(
+          side: const BorderSide(color: AppTheme.rule),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        title: const Text(
+          'Assinatura indisponível',
+          style: TextStyle(fontWeight: FontWeight.w900),
+        ),
+        content: Text(message, style: const TextStyle(height: 1.35)),
+        actions: [
+          ElevatedButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Tentar outra'),
+          ),
+        ],
+      ),
     );
   }
 
@@ -666,7 +713,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
           body: AppBackdrop(
             primary: widget.level.accent,
             secondary: AppTheme.pressRed,
-            showAudioControl: false,
+            showOptionsControl: false,
             child: const Center(
               child: SizedBox.square(
                 dimension: 32,
@@ -694,7 +741,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
               AppBackdrop(
                 primary: widget.level.accent,
                 secondary: AppTheme.pressRed,
-                showAudioControl: false,
+                showOptionsControl: false,
                 child: const SizedBox.expand(),
               ),
               IgnorePointer(
@@ -992,7 +1039,7 @@ class _GameHeader extends StatelessWidget {
                 compact: compact,
               ),
               SizedBox(width: compact ? 8 : 10),
-              const AppAudioControl(dark: true),
+              const AppOptionsControl(dark: true),
               SizedBox(width: compact ? 8 : 10),
               _HeaderScorePill(
                 score: score,

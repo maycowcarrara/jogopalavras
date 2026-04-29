@@ -42,6 +42,39 @@ void main() {
   });
 
   test('todas as palavras têm dicas sem entregar a resposta', () {
+    const genericHints = {
+      'Cabe em chamada curta de jornal',
+      'Surge bastante na fala sem cerimônia',
+      'Pode aparecer em bilhete rápido',
+      'Funciona como peça pequena da conversa',
+      'Entra fácil numa manchete enxuta',
+      'Fica perto do vocabulário de todo dia',
+      'Ajuda a montar uma frase simples',
+      'Palavra breve, mas com presença forte',
+      'Costuma passar despercebida por hábito',
+      'Tem jeito de nota curta no canto da página',
+      'Aparece bem em conversa ou notícia',
+      'Tem tamanho de chamada de caderno',
+      'Serve para dar mais corpo a uma frase',
+      'Frequente em textos sem soar difícil',
+      'Pode ocupar o centro de uma pequena nota',
+      'Integra vocabulário bem circulado',
+      'Ajuda a ligar ideia, fato ou descrição',
+      'Soa familiar mesmo fora da escola',
+      'Entra sem esforço numa matéria curta',
+      'Tem ritmo de palavra comum em manchete',
+      'Pede atenção maior antes do fechamento',
+      'Tem presença de caderno mais completo',
+      'Costuma carregar ideia com mais fôlego',
+      'Cabe em reportagem, análise ou editorial',
+      'Parece palavra de página mais densa',
+      'Exige leitura calma para não escapar',
+      'Tem corpo de termo usado em matéria longa',
+      'Ajuda a nomear assunto mais elaborado',
+      'Surge quando a pauta ganha profundidade',
+      'Combina com edição revisada com cuidado',
+    };
+
     for (final entries in wordBank.values) {
       expect(entries, isNotEmpty);
 
@@ -49,11 +82,63 @@ void main() {
         expect(entry.text, isNotEmpty);
         expect(entry.hint, isNotEmpty);
         expect(
+          genericHints,
+          isNot(contains(entry.hint)),
+          reason: 'A dica de ${entry.text} é genérica demais.',
+        );
+        expect(
           _normalize(entry.hint).contains(_normalize(entry.text)),
           isFalse,
           reason: 'A dica de ${entry.text} entrega a palavra.',
         );
       }
+    }
+  });
+
+  test('nível fácil não usa preposições ou pronomes como palavra', () {
+    const weakEasyWords = {
+      'ANTE',
+      'APÓS',
+      'COMO',
+      'CUJA',
+      'CUJO',
+      'DELA',
+      'DELE',
+      'ELES',
+      'ELAS',
+      'ESSE',
+      'ESSA',
+      'ESTA',
+      'ESTE',
+      'ISTO',
+      'LHES',
+      'MAIS',
+      'MEUS',
+      'NELA',
+      'NELE',
+      'NUMA',
+      'PARA',
+      'PELA',
+      'PELO',
+      'POIS',
+      'QUAL',
+      'QUEM',
+      'SEUS',
+      'SUAS',
+      'TAIS',
+      'TEUS',
+      'TUAS',
+      'VOCÊ',
+    };
+
+    final easyWords = wordBank[GameLevel.easy]!.map((entry) => entry.text);
+
+    for (final word in easyWords) {
+      expect(
+        weakEasyWords,
+        isNot(contains(word)),
+        reason: '$word não tem conceito bom para uma dica fácil.',
+      );
     }
   });
 
@@ -78,10 +163,10 @@ void main() {
     }
   });
 
-  test('banco expandido tem pelo menos trezentas palavras novas por nível', () {
-    expect(wordBank[GameLevel.easy]!.length, greaterThanOrEqualTo(464));
-    expect(wordBank[GameLevel.medium]!.length, greaterThanOrEqualTo(504));
-    expect(wordBank[GameLevel.hard]!.length, greaterThanOrEqualTo(492));
+  test('banco curado mantém variedade suficiente por nível', () {
+    expect(wordBank[GameLevel.easy]!.length, greaterThanOrEqualTo(150));
+    expect(wordBank[GameLevel.medium]!.length, greaterThanOrEqualTo(180));
+    expect(wordBank[GameLevel.hard]!.length, greaterThanOrEqualTo(190));
   });
 }
 

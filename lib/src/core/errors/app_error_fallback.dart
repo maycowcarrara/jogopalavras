@@ -12,7 +12,7 @@ class AppErrorFallback extends StatelessWidget {
       body: AppBackdrop(
         primary: AppTheme.pressBlue,
         secondary: AppTheme.pressRed,
-        showAudioControl: false,
+        showOptionsControl: false,
         child: SafeArea(
           child: Center(
             child: ConstrainedBox(

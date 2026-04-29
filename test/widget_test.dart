@@ -20,11 +20,11 @@ void main() {
     await tester.tap(find.text('Iniciar jogo'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Escolha a editoria'), findsOneWidget);
-    expect(find.text('Começar no fácil'), findsOneWidget);
-    expect(find.text('Abrir pauta livre'), findsOneWidget);
+    expect(find.text('Mapa da edição'), findsOneWidget);
+    expect(find.text('Pauta'), findsOneWidget);
+    expect(find.text('Plantão: Pauta Livre'), findsOneWidget);
 
-    await tester.tap(find.text('Começar no fácil'));
+    await tester.tap(find.byKey(const ValueKey<String>('stage_easy')));
     await tester.pumpAndSettle();
 
     expect(find.text('0/10 palavras'), findsOneWidget);
@@ -47,13 +47,13 @@ void main() {
     expect(find.text('0/8 palavras'), findsOneWidget);
   });
 
-  testWidgets('controle de audio abre painel discreto', (tester) async {
+  testWidgets('opções abre painel discreto', (tester) async {
     SharedPreferences.setMockInitialValues({'intro_seen_v1': true});
     await tester.pumpWidget(const WordMazeApp());
     await tester.pumpAndSettle();
 
     await tester.tap(
-      find.byKey(const ValueKey<String>('app_audio_control_button')),
+      find.byKey(const ValueKey<String>('app_options_button')),
     );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 160));
@@ -63,7 +63,7 @@ void main() {
     expect(find.byType(Slider), findsOneWidget);
   });
 
-  testWidgets('controle de audio muta efeitos e salva preferência', (
+  testWidgets('opções muta efeitos e salva preferência', (
     tester,
   ) async {
     SharedPreferences.setMockInitialValues({'intro_seen_v1': true});
@@ -71,7 +71,7 @@ void main() {
     await tester.pumpAndSettle();
 
     await tester.tap(
-      find.byKey(const ValueKey<String>('app_audio_control_button')),
+      find.byKey(const ValueKey<String>('app_options_button')),
     );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 160));
@@ -82,7 +82,6 @@ void main() {
       () => Future<void>.delayed(const Duration(milliseconds: 50)),
     );
 
-    expect(find.text('Efeitos mute'), findsOneWidget);
     final preferences = await SharedPreferences.getInstance();
     expect(preferences.getBool('effects_enabled_v1'), isFalse);
   });

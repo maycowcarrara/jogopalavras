@@ -74,6 +74,22 @@ class RankingEntry {
   }
 }
 
+enum InitialsUpdateStatus { saved, invalid, unavailable, cooldown }
+
+class InitialsUpdateResult {
+  const InitialsUpdateResult({
+    required this.status,
+    this.initials,
+    this.remainingCooldown,
+  });
+
+  final InitialsUpdateStatus status;
+  final String? initials;
+  final Duration? remainingCooldown;
+
+  bool get saved => status == InitialsUpdateStatus.saved;
+}
+
 GameLevel _levelFromName(String? name) {
   for (final level in GameLevel.values) {
     if (level.name == name) {
@@ -92,6 +108,10 @@ class RankingStore {
   static const Duration _requestTimeout = Duration(seconds: 6);
   static const String _storageKey = 'ranking_entries_v1';
   static const String _lastInitialsKey = 'ranking_last_initials_v1';
+  static const String _lastInitialsChangedAtKey =
+      'ranking_last_initials_changed_at_v1';
+  static const String _playerIdKey = 'ranking_player_id_v1';
+  static const Duration initialsChangeCooldown = Duration(days: 30);
   static const String _productionApiBaseUrl =
       'https://anagrama-oculto-ranking.maycowcarrara.workers.dev';
   static const String _apiBaseUrl = String.fromEnvironment(
@@ -158,6 +178,80 @@ class RankingStore {
 
     final preferences = await SharedPreferences.getInstance();
     await preferences.setString(_lastInitialsKey, sanitizedInitials);
+  }
+
+  Future<DateTime?> loadLastInitialsChangedAt() async {
+    final preferences = await SharedPreferences.getInstance();
+    final rawValue = preferences.getString(_lastInitialsChangedAtKey);
+    return rawValue == null ? null : DateTime.tryParse(rawValue);
+  }
+
+  Future<Duration?> remainingInitialsCooldown({DateTime? now}) async {
+    final changedAt = await loadLastInitialsChangedAt();
+    if (changedAt == null) {
+      return null;
+    }
+
+    final elapsed = (now ?? DateTime.now()).difference(changedAt);
+    final remaining = initialsChangeCooldown - elapsed;
+    return remaining.isNegative ? null : remaining;
+  }
+
+  Future<InitialsUpdateResult> updatePlayerInitials(
+    String initials, {
+    DateTime? now,
+  }) async {
+    final sanitizedInitials = _sanitizeInitials(initials);
+    if (sanitizedInitials == null) {
+      return const InitialsUpdateResult(status: InitialsUpdateStatus.invalid);
+    }
+
+    final currentInitials = await loadLastInitials();
+    if (currentInitials == sanitizedInitials) {
+      await saveLastInitials(sanitizedInitials);
+      return InitialsUpdateResult(
+        status: InitialsUpdateStatus.saved,
+        initials: sanitizedInitials,
+      );
+    }
+
+    final cooldown = await remainingInitialsCooldown(now: now);
+    if (currentInitials.isNotEmpty && cooldown != null) {
+      return InitialsUpdateResult(
+        status: InitialsUpdateStatus.cooldown,
+        remainingCooldown: cooldown,
+      );
+    }
+
+    final reserved = await _reserveInitials(
+      sanitizedInitials,
+      previousInitials: currentInitials,
+    );
+    if (reserved == false) {
+      return const InitialsUpdateResult(
+        status: InitialsUpdateStatus.unavailable,
+      );
+    }
+
+    if (reserved == null &&
+        await _localInitialsAlreadyUsed(sanitizedInitials, currentInitials)) {
+      return const InitialsUpdateResult(
+        status: InitialsUpdateStatus.unavailable,
+      );
+    }
+
+    final preferences = await SharedPreferences.getInstance();
+    final changedAt = now ?? DateTime.now();
+    await preferences.setString(_lastInitialsKey, sanitizedInitials);
+    await preferences.setString(
+      _lastInitialsChangedAtKey,
+      changedAt.toIso8601String(),
+    );
+
+    return InitialsUpdateResult(
+      status: InitialsUpdateStatus.saved,
+      initials: sanitizedInitials,
+    );
   }
 
   Future<List<RankingEntry>> _loadLocalEntries({GameLevel? level}) async {
@@ -235,6 +329,69 @@ class RankingStore {
     }
   }
 
+  Future<bool?> _reserveInitials(
+    String initials, {
+    required String previousInitials,
+  }) async {
+    if (_apiBaseUrl.isEmpty) {
+      return null;
+    }
+
+    try {
+      final playerId = await _loadPlayerId();
+      final response = await http
+          .post(
+            _playersUri(),
+            headers: const <String, String>{'content-type': 'application/json'},
+            body: jsonEncode(<String, Object?>{
+              'initials': initials,
+              'previousInitials': previousInitials,
+              'ownerId': playerId,
+            }),
+          )
+          .timeout(_requestTimeout);
+
+      if (response.statusCode == 409) {
+        return false;
+      }
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        return true;
+      }
+
+      return null;
+    } on Object {
+      return null;
+    }
+  }
+
+  Future<bool> _localInitialsAlreadyUsed(
+    String initials,
+    String currentInitials,
+  ) async {
+    if (currentInitials == initials) {
+      return false;
+    }
+
+    final entries = await _loadLocalEntries();
+    return entries.any((entry) => entry.initials == initials);
+  }
+
+  Future<String> _loadPlayerId() async {
+    final preferences = await SharedPreferences.getInstance();
+    final storedId = preferences.getString(_playerIdKey);
+    if (storedId != null && storedId.length >= 16) {
+      return storedId;
+    }
+
+    final random = Random.secure();
+    final id = List<int>.generate(24, (_) => random.nextInt(36))
+        .map((value) => value.toRadixString(36))
+        .join();
+    await preferences.setString(_playerIdKey, id);
+    return id;
+  }
+
   Uri _rankingUri({GameLevel? level}) {
     final baseUri = Uri.parse(_apiBaseUrl);
     final path = baseUri.path.endsWith('/ranking')
@@ -245,6 +402,12 @@ class RankingStore {
       path: path,
       queryParameters: <String, String>{if (level != null) 'level': level.name},
     );
+  }
+
+  Uri _playersUri() {
+    final baseUri = Uri.parse(_apiBaseUrl);
+    final path = '${baseUri.path.replaceFirst(RegExp(r'/$'), '')}/players';
+    return baseUri.replace(path: path);
   }
 
   List<RankingEntry>? _entriesFromResponse(String body, {GameLevel? level}) {

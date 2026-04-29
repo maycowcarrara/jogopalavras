@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:jogopalavras/src/core/audio/game_music_service.dart';
+import 'package:jogopalavras/src/game/ranking_store.dart';
 import 'package:jogopalavras/src/theme/app_theme.dart';
 
 class AppBackdrop extends StatelessWidget {
@@ -8,14 +10,14 @@ class AppBackdrop extends StatelessWidget {
     required this.child,
     this.primary = AppTheme.pressBlue,
     this.secondary = AppTheme.pressRed,
-    this.showAudioControl = true,
+    this.showOptionsControl = true,
     this.topRightActions = const [],
   });
 
   final Widget child;
   final Color primary;
   final Color secondary;
-  final bool showAudioControl;
+  final bool showOptionsControl;
   final List<Widget> topRightActions;
 
   @override
@@ -47,7 +49,7 @@ class AppBackdrop extends StatelessWidget {
             child: const SizedBox.expand(),
           ),
           child,
-          if (showAudioControl || topRightActions.isNotEmpty)
+          if (showOptionsControl || topRightActions.isNotEmpty)
             SafeArea(
               child: Align(
                 alignment: Alignment.topRight,
@@ -58,10 +60,10 @@ class AppBackdrop extends StatelessWidget {
                     children: [
                       for (final action in topRightActions) ...[
                         action,
-                        if (showAudioControl || action != topRightActions.last)
+                        if (showOptionsControl || action != topRightActions.last)
                           const SizedBox(width: 8),
                       ],
-                      if (showAudioControl) const AppAudioControl(),
+                      if (showOptionsControl) const AppOptionsControl(),
                     ],
                   ),
                 ),
@@ -73,16 +75,16 @@ class AppBackdrop extends StatelessWidget {
   }
 }
 
-class AppAudioControl extends StatefulWidget {
-  const AppAudioControl({super.key, this.dark = false});
+class AppOptionsControl extends StatefulWidget {
+  const AppOptionsControl({super.key, this.dark = false});
 
   final bool dark;
 
   @override
-  State<AppAudioControl> createState() => _AppAudioControlState();
+  State<AppOptionsControl> createState() => _AppOptionsControlState();
 }
 
-class _AppAudioControlState extends State<AppAudioControl> {
+class _AppOptionsControlState extends State<AppOptionsControl> {
   bool _musicEnabled = GameMusicService.instance.enabled;
   bool _effectsEnabled = GameMusicService.instance.effectsEnabled;
   double _musicVolume = GameMusicService.instance.volume;
@@ -140,7 +142,7 @@ class _AppAudioControlState extends State<AppAudioControl> {
 
   @override
   Widget build(BuildContext context) {
-    return AppAudioControlButton(
+    return AppOptionsButton(
       enabled: _musicEnabled,
       effectsEnabled: _effectsEnabled,
       volume: _musicVolume,
@@ -153,8 +155,8 @@ class _AppAudioControlState extends State<AppAudioControl> {
   }
 }
 
-class AppAudioControlButton extends StatelessWidget {
-  const AppAudioControlButton({
+class AppOptionsButton extends StatelessWidget {
+  const AppOptionsButton({
     super.key,
     required this.enabled,
     required this.effectsEnabled,
@@ -176,90 +178,28 @@ class AppAudioControlButton extends StatelessWidget {
   final bool dark;
 
   IconData get _icon {
-    if (!enabled) {
-      return Icons.volume_off_rounded;
-    }
-
-    return volume > 0.55 ? Icons.volume_up_rounded : Icons.volume_down_rounded;
+    return Icons.settings_rounded;
   }
 
   Future<void> _showPanel(BuildContext context) async {
-    final buttonBox = context.findRenderObject() as RenderBox?;
-    final overlayBox =
-        Overlay.of(context).context.findRenderObject() as RenderBox?;
-    final buttonOffset =
-        buttonBox?.localToGlobal(Offset.zero, ancestor: overlayBox) ??
-        Offset.zero;
-    final buttonSize = buttonBox?.size ?? const Size(42, 42);
+    await onSync?.call();
+    if (!context.mounted) {
+      return;
+    }
 
-    onSync?.call();
-
-    await showGeneralDialog<void>(
+    await showDialog<void>(
       context: context,
-      barrierColor: Colors.transparent,
-      barrierDismissible: true,
-      barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
-      pageBuilder: (dialogContext, animation, secondaryAnimation) {
-        var panelMusicEnabled = enabled;
-        var panelEffectsEnabled = effectsEnabled;
-        var panelVolume = volume;
-
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            final screenWidth = MediaQuery.sizeOf(context).width;
-            final right = (screenWidth - buttonOffset.dx - buttonSize.width)
-                .clamp(8.0, screenWidth);
-
-            return Stack(
-              children: [
-                Positioned(
-                  top: buttonOffset.dy + buttonSize.height + 8,
-                  right: right,
-                  child: Material(
-                    color: Colors.transparent,
-                    child: _AudioControlPanel(
-                      enabled: panelMusicEnabled,
-                      effectsEnabled: panelEffectsEnabled,
-                      volume: panelVolume,
-                      onToggleMusic: () {
-                        final nextValue = !panelMusicEnabled;
-                        setDialogState(() {
-                          panelMusicEnabled = nextValue;
-                        });
-                        onToggleMusic();
-                      },
-                      onToggleEffects: () {
-                        final nextValue = !panelEffectsEnabled;
-                        setDialogState(() {
-                          panelEffectsEnabled = nextValue;
-                        });
-                        onToggleEffects();
-                      },
-                      onVolumeChanged: (value) {
-                        setDialogState(() {
-                          panelVolume = value;
-                          if (value > 0) {
-                            panelMusicEnabled = true;
-                          }
-                        });
-                        onVolumeChanged(value);
-                      },
-                    ),
-                  ),
-                ),
-              ],
-            );
-          },
-        );
-      },
-      transitionBuilder: (context, animation, secondaryAnimation, child) {
-        return FadeTransition(
-          opacity: CurvedAnimation(parent: animation, curve: Curves.easeOut),
-          child: child,
-        );
-      },
-      transitionDuration: const Duration(milliseconds: 120),
+      builder: (_) => _OptionsDialog(
+        enabled: enabled,
+        effectsEnabled: effectsEnabled,
+        volume: volume,
+        onToggleMusic: onToggleMusic,
+        onToggleEffects: onToggleEffects,
+        onVolumeChanged: onVolumeChanged,
+      ),
     );
+
+    await onSync?.call();
   }
 
   @override
@@ -271,16 +211,16 @@ class AppAudioControlButton extends StatelessWidget {
 
     return Semantics(
       button: true,
-      label: 'Controle de audio',
+      label: 'Opções',
       child: Tooltip(
-        message: 'Áudio',
+        message: 'Opções',
         child: Material(
           color: background,
           borderRadius: BorderRadius.circular(8),
           elevation: dark ? 0 : 10,
           shadowColor: AppTheme.midnight.withValues(alpha: 0.28),
           child: InkWell(
-            key: const ValueKey<String>('app_audio_control_button'),
+            key: const ValueKey<String>('app_options_button'),
             onTap: () => _showPanel(context),
             borderRadius: BorderRadius.circular(8),
             child: SizedBox.square(
@@ -294,8 +234,8 @@ class AppAudioControlButton extends StatelessWidget {
   }
 }
 
-class _AudioControlPanel extends StatelessWidget {
-  const _AudioControlPanel({
+class _OptionsDialog extends StatefulWidget {
+  const _OptionsDialog({
     required this.enabled,
     required this.effectsEnabled,
     required this.volume,
@@ -312,133 +252,293 @@ class _AudioControlPanel extends StatelessWidget {
   final ValueChanged<double> onVolumeChanged;
 
   @override
+  State<_OptionsDialog> createState() => _OptionsDialogState();
+}
+
+class _OptionsDialogState extends State<_OptionsDialog> {
+  late bool _musicEnabled = widget.enabled;
+  late bool _effectsEnabled = widget.effectsEnabled;
+  late double _volume = widget.volume;
+  late final TextEditingController _initialsController =
+      TextEditingController();
+  String _currentInitials = '';
+  String _draftInitials = '';
+  Duration? _cooldown;
+  bool _savingInitials = false;
+  String? _initialsMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSignature();
+  }
+
+  @override
+  void dispose() {
+    _initialsController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadSignature() async {
+    final initials = await RankingStore.instance.loadLastInitials();
+    final cooldown = await RankingStore.instance.remainingInitialsCooldown();
+    if (!mounted) {
+      return;
+    }
+
+    _initialsController.text = initials;
+    _initialsController.selection = TextSelection.collapsed(
+      offset: initials.length,
+    );
+    setState(() {
+      _currentInitials = initials;
+      _draftInitials = initials;
+      _cooldown = cooldown;
+    });
+  }
+
+  void _handleInitialsChanged(String value) {
+    final nextInitials = value.toUpperCase();
+    if (_initialsController.text != nextInitials) {
+      _initialsController.value = TextEditingValue(
+        text: nextInitials,
+        selection: TextSelection.collapsed(offset: nextInitials.length),
+      );
+    }
+
+    setState(() {
+      _draftInitials = nextInitials;
+      _initialsMessage = null;
+    });
+  }
+
+  Future<void> _saveInitials() async {
+    setState(() {
+      _savingInitials = true;
+      _initialsMessage = null;
+    });
+
+    final result = await RankingStore.instance.updatePlayerInitials(
+      _draftInitials,
+    );
+    final cooldown = await RankingStore.instance.remainingInitialsCooldown();
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _savingInitials = false;
+      _cooldown = cooldown;
+      if (result.saved) {
+        final savedInitials = result.initials ?? _draftInitials;
+        _currentInitials = savedInitials;
+        _draftInitials = savedInitials;
+        _initialsController.text = savedInitials;
+        _initialsController.selection = TextSelection.collapsed(
+          offset: savedInitials.length,
+        );
+        _initialsMessage = 'Assinatura salva.';
+      } else {
+        _initialsMessage = _messageForInitialsResult(result);
+      }
+    });
+  }
+
+  String _messageForInitialsResult(InitialsUpdateResult result) {
+    return switch (result.status) {
+      InitialsUpdateStatus.invalid => 'Use de 3 a 5 letras.',
+      InitialsUpdateStatus.unavailable =>
+        'Essa assinatura já está em uso no ranking.',
+      InitialsUpdateStatus.cooldown =>
+        'Você poderá alterar novamente em ${_formatCooldown(result.remainingCooldown)}.',
+      InitialsUpdateStatus.saved => 'Assinatura salva.',
+    };
+  }
+
+  String _formatCooldown(Duration? duration) {
+    if (duration == null || duration.isNegative) {
+      return 'breve';
+    }
+
+    final days = duration.inDays + (duration.inHours % 24 > 0 ? 1 : 0);
+    if (days <= 1) {
+      return '1 dia';
+    }
+
+    return '$days dias';
+  }
+
+  bool get _canSaveInitials {
+    final validLength = _draftInitials.length >= 3 && _draftInitials.length <= 5;
+    final changed = _draftInitials != _currentInitials;
+    final locked = _currentInitials.isNotEmpty && _cooldown != null && changed;
+    return validLength && changed && !locked && !_savingInitials;
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.98),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: AppTheme.rule),
-        boxShadow: [
-          BoxShadow(
-            color: AppTheme.midnight.withValues(alpha: 0.18),
-            blurRadius: 18,
-            offset: const Offset(0, 8),
-          ),
-        ],
+    return AlertDialog(
+      backgroundColor: AppTheme.card,
+      shape: RoundedRectangleBorder(
+        side: const BorderSide(color: AppTheme.rule),
+        borderRadius: BorderRadius.circular(12),
       ),
-      child: SizedBox(
-        width: 184,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+      title: const Text(
+        'Opções',
+        style: TextStyle(fontWeight: FontWeight.w900),
+      ),
+      content: SizedBox(
+        width: 320,
+        child: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _AudioPanelButton(
-                icon: enabled
-                    ? Icons.music_note_rounded
-                    : Icons.music_off_rounded,
-                label: enabled ? 'Música' : 'Música mute',
-                active: enabled,
-                onTap: onToggleMusic,
+              const _OptionsSectionTitle(
+                icon: Icons.volume_up_rounded,
+                label: 'Som',
               ),
-              SizedBox(
-                height: 36,
-                child: Row(
-                  children: [
-                    const SizedBox(
-                      width: 34,
-                      child: Icon(
-                        Icons.volume_up_rounded,
-                        color: AppTheme.pressBlue,
-                        size: 18,
-                      ),
-                    ),
-                    Expanded(
-                      child: SliderTheme(
-                        data: SliderTheme.of(context).copyWith(
-                          trackHeight: 3,
-                          activeTrackColor: AppTheme.pressBlue,
-                          inactiveTrackColor: AppTheme.rule,
-                          thumbColor: AppTheme.pressBlue,
-                          overlayColor: AppTheme.pressBlue.withValues(
-                            alpha: 0.12,
-                          ),
-                          thumbShape: const RoundSliderThumbShape(
-                            enabledThumbRadius: 6,
-                          ),
-                          overlayShape: const RoundSliderOverlayShape(
-                            overlayRadius: 12,
-                          ),
-                        ),
-                        child: Slider(value: volume, onChanged: onVolumeChanged),
-                      ),
-                    ),
-                  ],
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                dense: true,
+                title: const Text(
+                  'Música',
+                  style: TextStyle(fontWeight: FontWeight.w800),
                 ),
+                value: _musicEnabled,
+                onChanged: (value) {
+                  setState(() => _musicEnabled = value);
+                  widget.onToggleMusic();
+                },
               ),
-              _AudioPanelButton(
-                icon: effectsEnabled
-                    ? Icons.auto_awesome_rounded
-                    : Icons.do_not_disturb_on_rounded,
-                label: effectsEnabled ? 'Efeitos' : 'Efeitos mute',
-                active: effectsEnabled,
-                onTap: onToggleEffects,
+              Row(
+                children: [
+                  const SizedBox(
+                    width: 28,
+                    child: Icon(
+                      Icons.volume_up_rounded,
+                      color: AppTheme.pressBlue,
+                      size: 18,
+                    ),
+                  ),
+                  Expanded(
+                    child: Slider(
+                      value: _volume,
+                      onChanged: (value) {
+                        setState(() {
+                          _volume = value;
+                          if (value > 0) {
+                            _musicEnabled = true;
+                          }
+                        });
+                        widget.onVolumeChanged(value);
+                      },
+                    ),
+                  ),
+                ],
+              ),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                dense: true,
+                title: const Text(
+                  'Efeitos',
+                  style: TextStyle(fontWeight: FontWeight.w800),
+                ),
+                value: _effectsEnabled,
+                onChanged: (value) {
+                  setState(() => _effectsEnabled = value);
+                  widget.onToggleEffects();
+                },
+              ),
+              const Divider(height: 24),
+              const _OptionsSectionTitle(
+                icon: Icons.badge_rounded,
+                label: 'Ranking',
+              ),
+              TextField(
+                controller: _initialsController,
+                textCapitalization: TextCapitalization.characters,
+                maxLength: 5,
+                inputFormatters: [
+                  FilteringTextInputFormatter.allow(RegExp('[a-zA-Z]')),
+                  LengthLimitingTextInputFormatter(5),
+                ],
+                decoration: InputDecoration(
+                  counterText: '',
+                  labelText: _currentInitials.isEmpty
+                      ? 'Criar assinatura'
+                      : 'Assinatura',
+                  helperText: _currentInitials.isNotEmpty && _cooldown != null
+                      ? 'Nova troca em ${_formatCooldown(_cooldown)}'
+                      : 'Use de 3 a 5 letras',
+                  border: const OutlineInputBorder(),
+                ),
+                onChanged: _handleInitialsChanged,
+              ),
+              if (_initialsMessage != null) ...[
+                const SizedBox(height: 8),
+                Text(
+                  _initialsMessage!,
+                  style: TextStyle(
+                    color: _initialsMessage == 'Assinatura salva.'
+                        ? AppTheme.pressGreen
+                        : AppTheme.pressRed,
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w800,
+                    height: 1.18,
+                  ),
+                ),
+              ],
+              const SizedBox(height: 10),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: _canSaveInitials ? _saveInitials : null,
+                  icon: _savingInitials
+                      ? const SizedBox.square(
+                          dimension: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.save_rounded, size: 18),
+                  label: const Text('Salvar assinatura'),
+                ),
               ),
             ],
           ),
         ),
       ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Fechar'),
+        ),
+      ],
     );
   }
 }
 
-class _AudioPanelButton extends StatelessWidget {
-  const _AudioPanelButton({
-    required this.icon,
-    required this.label,
-    required this.active,
-    required this.onTap,
-  });
+class _OptionsSectionTitle extends StatelessWidget {
+  const _OptionsSectionTitle({required this.icon, required this.label});
 
   final IconData icon;
   final String label;
-  final bool active;
-  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
-      child: SizedBox(
-        height: 34,
-        child: Row(
-          children: [
-            SizedBox(
-              width: 34,
-              child: Icon(
-                icon,
-                color: active
-                    ? AppTheme.pressBlue
-                    : AppTheme.midnight.withValues(alpha: 0.64),
-                size: 18,
-              ),
-            ),
-            Expanded(
-              child: Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: AppTheme.midnight.withValues(alpha: 0.86),
-                  fontWeight: FontWeight.w800,
-                  fontSize: 13,
-                ),
-              ),
-            ),
-          ],
+    return Row(
+      children: [
+        Icon(icon, color: AppTheme.pressBlue, size: 19),
+        const SizedBox(width: 8),
+        Text(
+          label,
+          style: const TextStyle(
+            color: AppTheme.midnight,
+            fontSize: 15,
+            fontWeight: FontWeight.w900,
+            height: 1,
+          ),
         ),
-      ),
+      ],
     );
   }
 }
