@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:jogopalavras/src/game/campaign_progress_store.dart';
 import 'package:jogopalavras/src/game/game_level.dart';
@@ -23,6 +25,7 @@ class LevelScreen extends StatefulWidget {
 
 class _LevelScreenState extends State<LevelScreen> {
   static const _autoScrollAlignment = 0.08;
+  static const _exitConfirmationWindow = Duration(seconds: 5);
 
   late Future<_CampaignSnapshot> _progressFuture = _loadCampaignSnapshot();
   final ScrollController _scrollController = ScrollController();
@@ -32,6 +35,8 @@ class _LevelScreenState extends State<LevelScreen> {
     GameLevel.hard: GlobalKey(),
   };
   String? _lastAutoScrollTarget;
+  bool _waitingForExitConfirmation = false;
+  Timer? _exitConfirmationTimer;
 
   void _refreshProgress() {
     setState(() {
@@ -60,6 +65,7 @@ class _LevelScreenState extends State<LevelScreen> {
 
   @override
   void dispose() {
+    _exitConfirmationTimer?.cancel();
     _scrollController.dispose();
     super.dispose();
   }
@@ -110,6 +116,28 @@ class _LevelScreenState extends State<LevelScreen> {
     _refreshProgress();
   }
 
+  void _handleBackPressed() {
+    if (_waitingForExitConfirmation) {
+      SystemNavigator.pop();
+      return;
+    }
+
+    _waitingForExitConfirmation = true;
+    _exitConfirmationTimer?.cancel();
+    _exitConfirmationTimer = Timer(_exitConfirmationWindow, () {
+      _waitingForExitConfirmation = false;
+    });
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        const SnackBar(
+          content: Text('Pressione voltar novamente para sair'),
+          duration: _exitConfirmationWindow,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+  }
+
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<_CampaignSnapshot>(
@@ -120,47 +148,56 @@ class _LevelScreenState extends State<LevelScreen> {
           _scheduleAutoScroll(campaign);
         }
 
-        return Scaffold(
-          bottomNavigationBar: const AdBannerSlot(
-            adSize: AdSize.largeBanner,
-            safeAreaMinimum: EdgeInsets.fromLTRB(18, 0, 18, 10),
-          ),
-          body: AppBackdrop(
-            primary: AppTheme.pressBlue,
-            secondary: AppTheme.pressRed,
-            child: SafeArea(
-              child: Column(
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(18, 6, 18, 0),
-                    child: Column(
-                      children: [
-                        const _MapHeader(),
-                        const SizedBox(height: 12),
-                        _NextObjectiveBanner(
-                          campaign: campaign,
-                          onTap: () => _openNextObjective(campaign),
-                        ),
-                        const SizedBox(height: 10),
-                        _FreePlayDock(onProgressChanged: _refreshProgress),
-                      ],
+        return PopScope(
+          canPop: false,
+          onPopInvokedWithResult: (didPop, result) {
+            if (didPop) {
+              return;
+            }
+            _handleBackPressed();
+          },
+          child: Scaffold(
+            bottomNavigationBar: const AdBannerSlot(
+              adSize: AdSize.largeBanner,
+              safeAreaMinimum: EdgeInsets.fromLTRB(18, 0, 18, 10),
+            ),
+            body: AppBackdrop(
+              primary: AppTheme.pressBlue,
+              secondary: AppTheme.pressRed,
+              child: SafeArea(
+                child: Column(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(18, 6, 18, 0),
+                      child: Column(
+                        children: [
+                          const _MapHeader(),
+                          const SizedBox(height: 12),
+                          _NextObjectiveBanner(
+                            campaign: campaign,
+                            onTap: () => _openNextObjective(campaign),
+                          ),
+                          const SizedBox(height: 10),
+                          _FreePlayDock(onProgressChanged: _refreshProgress),
+                        ],
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 18),
-                  Expanded(
-                    child: ListView(
-                      controller: _scrollController,
-                      padding: const EdgeInsets.fromLTRB(18, 0, 18, 18),
-                      children: [
-                        _CampaignPath(
-                          campaign: campaign,
-                          chapterKeys: _chapterKeys,
-                          onProgressChanged: _refreshProgress,
-                        ),
-                      ],
+                    const SizedBox(height: 18),
+                    Expanded(
+                      child: ListView(
+                        controller: _scrollController,
+                        padding: const EdgeInsets.fromLTRB(18, 0, 18, 18),
+                        children: [
+                          _CampaignPath(
+                            campaign: campaign,
+                            chapterKeys: _chapterKeys,
+                            onProgressChanged: _refreshProgress,
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),

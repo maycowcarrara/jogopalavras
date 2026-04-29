@@ -7,6 +7,7 @@ import 'package:jogopalavras/src/core/ads/ad_service.dart';
 import 'package:jogopalavras/src/core/audio/game_music_service.dart';
 import 'package:jogopalavras/src/game/campaign_progress_store.dart';
 import 'package:jogopalavras/src/game/game_level.dart';
+import 'package:jogopalavras/src/game/hint_display_preferences.dart';
 import 'package:jogopalavras/src/game/ranking_store.dart';
 import 'package:jogopalavras/src/game/word_bank.dart';
 import 'package:jogopalavras/src/game/word_deck.dart';
@@ -253,6 +254,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
         level: WordDeck(wordBank[level]!, random: _random),
     };
     unawaited(_prepareGame());
+    unawaited(HintDisplayPreferences.instance.initialize());
     _startMusic();
   }
 
@@ -1135,7 +1137,9 @@ class _LevelIdentityBar extends StatelessWidget {
             ),
             const SizedBox(width: 8),
             _TinyPressBadge(
-              label: level.mixesAllLevels ? level.wordSizeShortLabel : level.tag,
+              label: level.mixesAllLevels
+                  ? level.wordSizeShortLabel
+                  : level.tag,
               color: level.accent,
             ),
           ],
@@ -1306,7 +1310,7 @@ class _RoundScenePanel extends StatelessWidget {
       clipBehavior: Clip.none,
       children: [
         Container(
-          padding: EdgeInsets.all(compact ? 10 : 12),
+          padding: EdgeInsets.all(compact ? 9 : 10),
           decoration: BoxDecoration(
             color: AppTheme.midnight,
             borderRadius: BorderRadius.circular(12),
@@ -1328,7 +1332,7 @@ class _RoundScenePanel extends StatelessWidget {
           child: LayoutBuilder(
             builder: (context, constraints) {
               final availableTextWidth = max(80.0, constraints.maxWidth - 18);
-              final tightHeight = constraints.maxHeight < 88;
+              final tightHeight = constraints.maxHeight <= 96;
               final maxWordFont = compact ? 22.0 : 27.0;
               final fittedWordFont = min(
                 maxWordFont,
@@ -1406,7 +1410,13 @@ class _RoundScenePanel extends StatelessWidget {
                       ),
                     ),
                   ),
-                  SizedBox(height: tightHeight ? 5 : compact ? 6 : 8),
+                  SizedBox(
+                    height: tightHeight
+                        ? 5
+                        : compact
+                        ? 6
+                        : 8,
+                  ),
                   ClipRRect(
                     borderRadius: BorderRadius.circular(999),
                     child: LinearProgressIndicator(
@@ -1469,7 +1479,12 @@ class _RoundActionPanel extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            _HintPanel(hint: hint, compact: compact, accent: level.accent),
+            _HintPanel(
+              level: level,
+              hint: hint,
+              compact: compact,
+              accent: level.accent,
+            ),
             SizedBox(height: compact ? 8 : 10),
             _SkipWordButton(
               penalty: skipPenalty,
@@ -1622,11 +1637,13 @@ class _ScoreChip extends StatelessWidget {
 
 class _HintPanel extends StatelessWidget {
   const _HintPanel({
+    required this.level,
     required this.hint,
     required this.compact,
     required this.accent,
   });
 
+  final GameLevel level;
   final String hint;
   final bool compact;
   final Color accent;
@@ -1655,16 +1672,32 @@ class _HintPanel extends StatelessWidget {
             ),
             const SizedBox(width: 6),
             Expanded(
-              child: Text(
-                'Nota da redação: $hint',
-                maxLines: compact ? 2 : 3,
-                overflow: TextOverflow.visible,
-                style: TextStyle(
-                  color: AppTheme.midnight,
-                  fontWeight: FontWeight.w800,
-                  fontSize: compact ? 13.5 : 14.5,
-                  height: 1.22,
-                ),
+              child: ValueListenableBuilder<HintDisplayMode>(
+                valueListenable: HintDisplayPreferences.instance.modeNotifier,
+                builder: (context, mode, child) {
+                  final style = TextStyle(
+                    color: AppTheme.midnight,
+                    fontWeight: FontWeight.w800,
+                    fontSize: compact ? 13.5 : 14.5,
+                    height: 1.22,
+                  );
+                  if (mode == HintDisplayMode.dicaAberta) {
+                    return Text(
+                      'Nota da redação: $hint',
+                      maxLines: compact ? 2 : 3,
+                      overflow: TextOverflow.visible,
+                      style: style,
+                    );
+                  }
+
+                  return _FlickeringHintText(
+                    level: level,
+                    hint: hint,
+                    maxLines: compact ? 2 : 3,
+                    style: style,
+                  );
+                },
+                child: const SizedBox.shrink(),
               ),
             ),
           ],
@@ -1672,6 +1705,291 @@ class _HintPanel extends StatelessWidget {
       ),
     );
   }
+}
+
+class _FlickeringHintText extends StatefulWidget {
+  const _FlickeringHintText({
+    required this.level,
+    required this.hint,
+    required this.maxLines,
+    required this.style,
+  });
+
+  final GameLevel level;
+  final String hint;
+  final int maxLines;
+  final TextStyle style;
+
+  @override
+  State<_FlickeringHintText> createState() => _FlickeringHintTextState();
+}
+
+class _FlickeringHintTextState extends State<_FlickeringHintText> {
+  static const Duration _tickInterval = Duration(milliseconds: 95);
+
+  late final Timer _timer;
+  late Random _random;
+  late _HintRevealProfile _profile;
+  List<String> _words = [];
+  List<_HintWordReveal> _wordReveals = [];
+  int _tick = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _resetHintAnimation();
+    _timer = Timer.periodic(_tickInterval, (_) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _advanceHintAnimation();
+      });
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant _FlickeringHintText oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.hint != widget.hint || oldWidget.level != widget.level) {
+      _resetHintAnimation();
+    }
+  }
+
+  @override
+  void dispose() {
+    _timer.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final baseColor = widget.style.color ?? AppTheme.midnight;
+    return Semantics(
+      label: 'Nota da redação: ${widget.hint}',
+      child: ExcludeSemantics(
+        child: Text.rich(
+          TextSpan(style: widget.style, children: _buildHintSpans(baseColor)),
+          maxLines: widget.maxLines,
+          overflow: TextOverflow.visible,
+        ),
+      ),
+    );
+  }
+
+  List<InlineSpan> _buildHintSpans(Color baseColor) {
+    var wordIndex = 0;
+    return [
+      const TextSpan(text: 'Nota da redação: '),
+      for (final token
+          in widget.hint
+              .splitMapJoin(
+                RegExp(r'\s+'),
+                onMatch: (match) => '\u0000${match.group(0)}\u0000',
+                onNonMatch: (text) => text,
+              )
+              .split('\u0000'))
+        if (token.trim().isEmpty)
+          TextSpan(text: token)
+        else
+          WidgetSpan(
+            alignment: PlaceholderAlignment.baseline,
+            baseline: TextBaseline.alphabetic,
+            child: _TypewriterHintWord(
+              fullWord: token,
+              visibleWord: _visibleWordFor(wordIndex++, token),
+              style: widget.style.copyWith(color: baseColor),
+            ),
+          ),
+    ];
+  }
+
+  void _resetHintAnimation() {
+    _random = Random();
+    _profile = _HintRevealProfile.forLevel(widget.level);
+    _tick = 0;
+    _words = widget.hint
+        .split(RegExp(r'\s+'))
+        .where((word) => word.isNotEmpty)
+        .toList();
+    _wordReveals = [
+      for (var index = 0; index < _words.length; index++)
+        _HintWordReveal(
+          hiddenUntil:
+              _profile.initialDelayBase +
+              _random.nextInt(_profile.initialDelayJitter) +
+              (index % 4) * _profile.indexDelayStep,
+          typeEvery: _profile.typeEveryMin + _random.nextInt(3),
+        ),
+    ];
+  }
+
+  void _advanceHintAnimation() {
+    _tick++;
+    final maxVisibleWords = _maxVisibleWords;
+    var visibleWords = _wordReveals
+        .where((reveal) => reveal.visibleCharacters > 0)
+        .length;
+
+    for (var index = 0; index < _wordReveals.length; index++) {
+      final reveal = _wordReveals[index];
+      final wordLength = _words[index].runes.length;
+
+      if (reveal.visibleCharacters == 0) {
+        if (_tick < reveal.hiddenUntil || visibleWords >= maxVisibleWords) {
+          continue;
+        }
+        reveal.visibleCharacters = 1;
+        reveal.lastTypedAt = _tick;
+        visibleWords++;
+        continue;
+      }
+
+      if (reveal.visibleCharacters < wordLength) {
+        if (_tick - reveal.lastTypedAt >= reveal.typeEvery) {
+          reveal.visibleCharacters++;
+          reveal.lastTypedAt = _tick;
+          if (reveal.visibleCharacters >= wordLength) {
+            reveal.holdUntil =
+                _tick + _profile.holdMin + _random.nextInt(_profile.holdJitter);
+          }
+        }
+        continue;
+      }
+
+      if (_tick >= reveal.holdUntil) {
+        reveal.visibleCharacters = 0;
+        reveal.holdUntil = 0;
+        reveal.hiddenUntil =
+            _tick +
+            _profile.repeatDelayBase +
+            _random.nextInt(_profile.repeatDelayJitter) +
+            (index % 3) * _profile.indexDelayStep;
+        reveal.typeEvery = _profile.typeEveryMin + _random.nextInt(3);
+        visibleWords--;
+      }
+    }
+  }
+
+  int get _maxVisibleWords {
+    if (_words.length <= 3) {
+      return min(_profile.maxVisibleWords, 1);
+    }
+    if (_words.length <= 8) {
+      return min(_profile.maxVisibleWords, _profile.compactVisibleWords);
+    }
+    return _profile.maxVisibleWords;
+  }
+
+  String _visibleWordFor(int index, String token) {
+    if (index >= _wordReveals.length) {
+      return '';
+    }
+    final visibleCharacters = min(
+      _wordReveals[index].visibleCharacters,
+      token.runes.length,
+    );
+    return String.fromCharCodes(token.runes.take(visibleCharacters));
+  }
+}
+
+class _TypewriterHintWord extends StatelessWidget {
+  const _TypewriterHintWord({
+    required this.fullWord,
+    required this.visibleWord,
+    required this.style,
+  });
+
+  final String fullWord;
+  final String visibleWord;
+  final TextStyle style;
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      children: [
+        Opacity(opacity: 0, child: Text(fullWord, style: style)),
+        Text(visibleWord, style: style),
+      ],
+    );
+  }
+}
+
+class _HintRevealProfile {
+  const _HintRevealProfile({
+    required this.initialDelayBase,
+    required this.initialDelayJitter,
+    required this.repeatDelayBase,
+    required this.repeatDelayJitter,
+    required this.indexDelayStep,
+    required this.holdMin,
+    required this.holdJitter,
+    required this.typeEveryMin,
+    required this.compactVisibleWords,
+    required this.maxVisibleWords,
+  });
+
+  final int initialDelayBase;
+  final int initialDelayJitter;
+  final int repeatDelayBase;
+  final int repeatDelayJitter;
+  final int indexDelayStep;
+  final int holdMin;
+  final int holdJitter;
+  final int typeEveryMin;
+  final int compactVisibleWords;
+  final int maxVisibleWords;
+
+  static _HintRevealProfile forLevel(GameLevel level) {
+    return switch (level) {
+      GameLevel.easy => const _HintRevealProfile(
+        initialDelayBase: 6,
+        initialDelayJitter: 24,
+        repeatDelayBase: 8,
+        repeatDelayJitter: 30,
+        indexDelayStep: 3,
+        holdMin: 12,
+        holdJitter: 8,
+        typeEveryMin: 1,
+        compactVisibleWords: 3,
+        maxVisibleWords: 4,
+      ),
+      GameLevel.medium => const _HintRevealProfile(
+        initialDelayBase: 5,
+        initialDelayJitter: 20,
+        repeatDelayBase: 7,
+        repeatDelayJitter: 24,
+        indexDelayStep: 3,
+        holdMin: 16,
+        holdJitter: 10,
+        typeEveryMin: 1,
+        compactVisibleWords: 2,
+        maxVisibleWords: 3,
+      ),
+      GameLevel.hard || GameLevel.pautaLivre => const _HintRevealProfile(
+        initialDelayBase: 4,
+        initialDelayJitter: 18,
+        repeatDelayBase: 6,
+        repeatDelayJitter: 20,
+        indexDelayStep: 2,
+        holdMin: 22,
+        holdJitter: 14,
+        typeEveryMin: 1,
+        compactVisibleWords: 3,
+        maxVisibleWords: 5,
+      ),
+    };
+  }
+}
+
+class _HintWordReveal {
+  _HintWordReveal({required this.hiddenUntil, required this.typeEvery});
+
+  int hiddenUntil;
+  int typeEvery;
+  int visibleCharacters = 0;
+  int lastTypedAt = 0;
+  int holdUntil = 0;
 }
 
 class _SkipWordButton extends StatelessWidget {
@@ -2090,8 +2408,8 @@ class _GameLayoutMetrics {
       contentGap: veryCompact ? 6.0 : 7.0,
       minPanelHeight: prioritizeBoard
           ? veryCompact
-                ? 84.0
-                : 88.0
+                ? 90.0
+                : 96.0
           : compact
           ? 88.0
           : 92.0,

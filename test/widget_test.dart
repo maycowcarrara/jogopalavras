@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:jogopalavras/src/app.dart';
 import 'package:jogopalavras/src/game/game_level.dart';
@@ -76,6 +77,81 @@ void main() {
     expect(routeRecorder.pushedRouteNames.last, '/game/easy');
   });
 
+  testWidgets('voltar na tela inicial pede confirmação antes de sair', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({'intro_seen_v1': true});
+    final platformMethods = <String>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        platformMethods.add(call.method);
+        return null;
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      ),
+    );
+
+    await tester.pumpWidget(const WordMazeApp());
+    await tester.pumpAndSettle();
+
+    await tester.binding.handlePopRoute();
+    await tester.pump();
+
+    expect(find.text('Mapa da edição'), findsOneWidget);
+    expect(find.text('Pressione voltar novamente para sair'), findsOneWidget);
+    expect(
+      platformMethods.where((method) => method == 'SystemNavigator.pop'),
+      isEmpty,
+    );
+
+    await tester.binding.handlePopRoute();
+    await tester.pump();
+
+    expect(platformMethods, contains('SystemNavigator.pop'));
+  });
+
+  testWidgets('confirmação de saída expira depois de 5 segundos', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({'intro_seen_v1': true});
+    final platformMethods = <String>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        platformMethods.add(call.method);
+        return null;
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      ),
+    );
+
+    await tester.pumpWidget(const WordMazeApp());
+    await tester.pumpAndSettle();
+
+    await tester.binding.handlePopRoute();
+    await tester.pump();
+
+    await tester.pump(const Duration(seconds: 6));
+    await tester.binding.handlePopRoute();
+    await tester.pump();
+
+    expect(find.text('Mapa da edição'), findsOneWidget);
+    expect(find.text('Pressione voltar novamente para sair'), findsOneWidget);
+    expect(
+      platformMethods.where((method) => method == 'SystemNavigator.pop'),
+      isEmpty,
+    );
+  });
+
   testWidgets('opções abre painel discreto', (tester) async {
     SharedPreferences.setMockInitialValues({'intro_seen_v1': true});
     await tester.pumpWidget(const WordMazeApp());
@@ -86,6 +162,8 @@ void main() {
 
     expect(find.text('Música'), findsOneWidget);
     expect(find.text('Efeitos'), findsOneWidget);
+    expect(find.text('Olho de Editor'), findsOneWidget);
+    expect(find.text('Dica Aberta'), findsOneWidget);
     expect(find.byType(Slider), findsOneWidget);
   });
 
@@ -105,6 +183,24 @@ void main() {
 
     final preferences = await SharedPreferences.getInstance();
     expect(preferences.getBool('effects_enabled_v1'), isFalse);
+  });
+
+  testWidgets('opções salva modo de dica aberta', (tester) async {
+    SharedPreferences.setMockInitialValues({'intro_seen_v1': true});
+    await tester.pumpWidget(const WordMazeApp());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey<String>('app_options_button')));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Dica Aberta'));
+    await tester.pumpAndSettle();
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 50)),
+    );
+
+    final preferences = await SharedPreferences.getInstance();
+    expect(preferences.getString('hint_display_mode_v1'), 'dicaAberta');
   });
 }
 

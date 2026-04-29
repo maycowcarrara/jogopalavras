@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:jogopalavras/src/core/audio/game_music_service.dart';
+import 'package:jogopalavras/src/game/hint_display_preferences.dart';
 import 'package:jogopalavras/src/game/ranking_store.dart';
 import 'package:jogopalavras/src/theme/app_theme.dart';
 
@@ -88,6 +89,7 @@ class _AppOptionsControlState extends State<AppOptionsControl> {
   bool _musicEnabled = GameMusicService.instance.enabled;
   bool _effectsEnabled = GameMusicService.instance.effectsEnabled;
   double _musicVolume = GameMusicService.instance.volume;
+  HintDisplayMode _hintDisplayMode = HintDisplayPreferences.instance.mode;
 
   @override
   void initState() {
@@ -97,6 +99,7 @@ class _AppOptionsControlState extends State<AppOptionsControl> {
 
   Future<void> _syncMusicState() async {
     await GameMusicService.instance.initialize();
+    await HintDisplayPreferences.instance.initialize();
     if (!mounted) {
       return;
     }
@@ -104,7 +107,15 @@ class _AppOptionsControlState extends State<AppOptionsControl> {
       _musicEnabled = GameMusicService.instance.enabled;
       _effectsEnabled = GameMusicService.instance.effectsEnabled;
       _musicVolume = GameMusicService.instance.volume;
+      _hintDisplayMode = HintDisplayPreferences.instance.mode;
     });
+  }
+
+  Future<void> _setHintDisplayMode(HintDisplayMode mode) async {
+    setState(() {
+      _hintDisplayMode = mode;
+    });
+    await HintDisplayPreferences.instance.setMode(mode);
   }
 
   Future<void> _toggleMusic() async {
@@ -146,11 +157,13 @@ class _AppOptionsControlState extends State<AppOptionsControl> {
       enabled: _musicEnabled,
       effectsEnabled: _effectsEnabled,
       volume: _musicVolume,
+      hintDisplayMode: _hintDisplayMode,
       dark: widget.dark,
       onSync: _syncMusicState,
       onToggleMusic: _toggleMusic,
       onToggleEffects: _toggleEffects,
       onVolumeChanged: _setVolume,
+      onHintDisplayModeChanged: _setHintDisplayMode,
     );
   }
 }
@@ -161,9 +174,11 @@ class AppOptionsButton extends StatelessWidget {
     required this.enabled,
     required this.effectsEnabled,
     required this.volume,
+    required this.hintDisplayMode,
     required this.onToggleMusic,
     required this.onToggleEffects,
     required this.onVolumeChanged,
+    required this.onHintDisplayModeChanged,
     this.onSync,
     this.dark = false,
   });
@@ -171,9 +186,11 @@ class AppOptionsButton extends StatelessWidget {
   final bool enabled;
   final bool effectsEnabled;
   final double volume;
+  final HintDisplayMode hintDisplayMode;
   final VoidCallback onToggleMusic;
   final VoidCallback onToggleEffects;
   final ValueChanged<double> onVolumeChanged;
+  final ValueChanged<HintDisplayMode> onHintDisplayModeChanged;
   final Future<void> Function()? onSync;
   final bool dark;
 
@@ -188,9 +205,11 @@ class AppOptionsButton extends StatelessWidget {
         enabled: enabled,
         effectsEnabled: effectsEnabled,
         volume: volume,
+        hintDisplayMode: hintDisplayMode,
         onToggleMusic: onToggleMusic,
         onToggleEffects: onToggleEffects,
         onVolumeChanged: onVolumeChanged,
+        onHintDisplayModeChanged: onHintDisplayModeChanged,
       ),
     );
 
@@ -234,17 +253,21 @@ class _OptionsDialog extends StatefulWidget {
     required this.enabled,
     required this.effectsEnabled,
     required this.volume,
+    required this.hintDisplayMode,
     required this.onToggleMusic,
     required this.onToggleEffects,
     required this.onVolumeChanged,
+    required this.onHintDisplayModeChanged,
   });
 
   final bool enabled;
   final bool effectsEnabled;
   final double volume;
+  final HintDisplayMode hintDisplayMode;
   final VoidCallback onToggleMusic;
   final VoidCallback onToggleEffects;
   final ValueChanged<double> onVolumeChanged;
+  final ValueChanged<HintDisplayMode> onHintDisplayModeChanged;
 
   @override
   State<_OptionsDialog> createState() => _OptionsDialogState();
@@ -254,6 +277,7 @@ class _OptionsDialogState extends State<_OptionsDialog> {
   late bool _musicEnabled = widget.enabled;
   late bool _effectsEnabled = widget.effectsEnabled;
   late double _volume = widget.volume;
+  late HintDisplayMode _hintDisplayMode = widget.hintDisplayMode;
   late final TextEditingController _initialsController =
       TextEditingController();
   String _currentInitials = '';
@@ -389,6 +413,30 @@ class _OptionsDialogState extends State<_OptionsDialog> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              const _OptionsSectionTitle(
+                icon: Icons.article_outlined,
+                label: 'Dica',
+              ),
+              SizedBox(
+                width: double.infinity,
+                child: SegmentedButton<HintDisplayMode>(
+                  showSelectedIcon: false,
+                  segments: [
+                    for (final mode in HintDisplayMode.values)
+                      ButtonSegment<HintDisplayMode>(
+                        value: mode,
+                        label: Text(mode.label),
+                      ),
+                  ],
+                  selected: {_hintDisplayMode},
+                  onSelectionChanged: (selection) {
+                    final mode = selection.first;
+                    setState(() => _hintDisplayMode = mode);
+                    widget.onHintDisplayModeChanged(mode);
+                  },
+                ),
+              ),
+              const Divider(height: 24),
               const _OptionsSectionTitle(
                 icon: Icons.volume_up_rounded,
                 label: 'Som',
