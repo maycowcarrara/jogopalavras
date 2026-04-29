@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:math';
 
+import 'package:flutter/foundation.dart';
 import 'package:jogopalavras/src/game/game_level.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -24,11 +25,13 @@ class RankingEntry {
     final errors = json['errors'] as int? ?? 0;
     final hintsUsed = json['hintsUsed'] as int? ?? 0;
     final skipsUsed = json['skipsUsed'] as int? ?? 0;
+    final level = _levelFromName(json['level'] as String?);
 
     return RankingEntry(
       initials: (json['initials'] as String? ?? '---').toUpperCase(),
-      level: _levelFromName(json['level'] as String?),
+      level: level,
       score: RankingStore.scoreForPerformance(
+        level: level,
         words: words,
         elapsedSeconds: elapsedSeconds,
         errors: errors,
@@ -89,8 +92,16 @@ class RankingStore {
   static const Duration _requestTimeout = Duration(seconds: 6);
   static const String _storageKey = 'ranking_entries_v1';
   static const String _lastInitialsKey = 'ranking_last_initials_v1';
-  static const String _apiBaseUrl = String.fromEnvironment('RANKING_API_URL');
-  static const int startingScore = 1000;
+  static const String _productionApiBaseUrl =
+      'https://anagrama-oculto-ranking.maycowcarrara.workers.dev';
+  static const String _apiBaseUrl = String.fromEnvironment(
+    'RANKING_API_URL',
+    defaultValue: kReleaseMode ? _productionApiBaseUrl : '',
+  );
+  static const int easyStartingScore = 1000;
+  static const int mediumStartingScore = 1250;
+  static const int hardStartingScore = 1500;
+  static const int pautaLivreStartingScore = 1450;
   static const int pointsPerWord = 30;
   static const int pointsPerSecond = 1;
   static const int pointsPerError = 50;
@@ -265,6 +276,7 @@ class RankingStore {
   }
 
   static int scoreForPerformance({
+    required GameLevel level,
     required int words,
     required int elapsedSeconds,
     int errors = 0,
@@ -273,7 +285,7 @@ class RankingStore {
   }) {
     return max(
       0,
-      startingScore -
+      startingScoreForLevel(level) -
           (words * pointsPerWord) -
           (elapsedSeconds * pointsPerSecond) -
           (errors * pointsPerError) -
@@ -291,6 +303,7 @@ class RankingStore {
     entries.sort((a, b) {
       final scoreComparison =
           scoreForPerformance(
+            level: b.level,
             words: b.words,
             elapsedSeconds: b.elapsedSeconds,
             errors: b.errors,
@@ -298,6 +311,7 @@ class RankingStore {
             skipsUsed: b.skipsUsed,
           ).compareTo(
             scoreForPerformance(
+              level: a.level,
               words: a.words,
               elapsedSeconds: a.elapsedSeconds,
               errors: a.errors,
@@ -321,6 +335,15 @@ class RankingStore {
 
       return a.completedAt.compareTo(b.completedAt);
     });
+  }
+
+  static int startingScoreForLevel(GameLevel level) {
+    return switch (level) {
+      GameLevel.easy => easyStartingScore,
+      GameLevel.medium => mediumStartingScore,
+      GameLevel.hard => hardStartingScore,
+      GameLevel.pautaLivre => pautaLivreStartingScore,
+    };
   }
 
   static String? _sanitizeInitials(String? initials) {

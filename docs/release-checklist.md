@@ -14,7 +14,7 @@ Use este checklist antes de enviar o primeiro `.aab` para a Play Console.
 - [ ] Rodar `flutter analyze --no-pub`.
 - [ ] Rodar `flutter test`.
 - [ ] Gerar `.aab` de release.
-- [ ] Confirmar que `RANKING_API_URL` esta definido no build que usa ranking remoto.
+- [ ] Confirmar que o build e `release`; nesse modo o ranking remoto usa a API publica por padrao.
 - [ ] Confirmar que `ADMIN_LOGS_TOKEN` existe no Worker para consultar diagnosticos.
 - [ ] Testar o bundle em teste interno antes de produção.
 

@@ -11,7 +11,12 @@ class AppErrorReporter {
 
   static final AppErrorReporter instance = AppErrorReporter._();
 
-  static const String _apiBaseUrl = String.fromEnvironment('RANKING_API_URL');
+  static const String _productionApiBaseUrl =
+      'https://anagrama-oculto-ranking.maycowcarrara.workers.dev';
+  static const String _apiBaseUrl = String.fromEnvironment(
+    'RANKING_API_URL',
+    defaultValue: kReleaseMode ? _productionApiBaseUrl : '',
+  );
   static const String _appVersion = String.fromEnvironment(
     'APP_VERSION',
     defaultValue: 'unknown',

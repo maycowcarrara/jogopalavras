@@ -59,40 +59,69 @@ class RankingScreen extends StatelessWidget {
   }
 }
 
-class _RankingLevelView extends StatelessWidget {
+class _RankingLevelView extends StatefulWidget {
   const _RankingLevelView({required this.level});
 
   final GameLevel level;
 
   @override
+  State<_RankingLevelView> createState() => _RankingLevelViewState();
+}
+
+class _RankingLevelViewState extends State<_RankingLevelView> {
+  late Future<List<RankingEntry>> _entriesFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _entriesFuture = _loadEntries();
+  }
+
+  Future<List<RankingEntry>> _loadEntries() {
+    return RankingStore.instance.loadEntries(level: widget.level);
+  }
+
+  Future<void> _refreshEntries() async {
+    final nextEntries = _loadEntries();
+    setState(() {
+      _entriesFuture = nextEntries;
+    });
+    await nextEntries;
+  }
+
+  @override
   Widget build(BuildContext context) {
     return FutureBuilder<List<RankingEntry>>(
-      future: RankingStore.instance.loadEntries(level: level),
+      future: _entriesFuture,
       builder: (context, snapshot) {
         final entries = snapshot.data ?? <RankingEntry>[];
 
-        return ListView(
-          padding: const EdgeInsets.fromLTRB(24, 18, 24, 24),
-          children: [
-            RevealOnMount(child: _RankingHeader(level: level)),
-            const SizedBox(height: 18),
-            if (snapshot.connectionState != ConnectionState.done)
-              const Center(child: CircularProgressIndicator())
-            else if (entries.isEmpty)
-              const _EmptyRanking()
-            else
-              for (var index = 0; index < entries.length; index++) ...[
-                RevealOnMount(
-                  delay: Duration(milliseconds: 70 + (index * 35)),
-                  child: _RankingCard(
-                    position: index + 1,
-                    entry: entries[index],
-                    accent: level.accent,
+        return RefreshIndicator(
+          onRefresh: _refreshEntries,
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(24, 18, 24, 24),
+            physics: const AlwaysScrollableScrollPhysics(),
+            children: [
+              RevealOnMount(child: _RankingHeader(level: widget.level)),
+              const SizedBox(height: 18),
+              if (snapshot.connectionState != ConnectionState.done)
+                const Center(child: CircularProgressIndicator())
+              else if (entries.isEmpty)
+                const _EmptyRanking()
+              else
+                for (var index = 0; index < entries.length; index++) ...[
+                  RevealOnMount(
+                    delay: Duration(milliseconds: 70 + (index * 35)),
+                    child: _RankingCard(
+                      position: index + 1,
+                      entry: entries[index],
+                      accent: widget.level.accent,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 10),
-              ],
-          ],
+                  const SizedBox(height: 10),
+                ],
+            ],
+          ),
         );
       },
     );

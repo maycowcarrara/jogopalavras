@@ -136,7 +136,6 @@ class _InitialsDialogState extends State<_InitialsDialog> {
 }
 
 class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
-  static const int _startingScore = RankingStore.startingScore;
   static const int _pointsPerHint = RankingStore.pointsPerHint;
   static const int _pointsPerSkip = RankingStore.pointsPerSkip;
   static const Duration _hintDelay = Duration(seconds: 10);
@@ -155,7 +154,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   String _currentWord = '';
   String _targetWord = '';
   String _currentHint = '';
-  int _score = _startingScore;
+  late int _score;
   int _errors = 0;
   int _hintsUsed = 0;
   int _skipsUsed = 0;
@@ -166,6 +165,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   bool _hintRevealed = false;
   bool _isHitCelebrating = false;
   bool _isPaused = false;
+  bool _exitDialogOpen = false;
   bool _pausedByLifecycle = false;
   String _typedHitWord = '';
   Offset? _dragPosition;
@@ -175,6 +175,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _random = Random();
+    _score = RankingStore.startingScoreForLevel(widget.level);
     _wordDecks = <GameLevel, WordDeck<WordEntry>>{
       for (final level in widget.level.sourceLevels)
         level: WordDeck(wordBank[level]!, random: _random),
@@ -210,6 +211,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
 
   int _scoreFromStats() {
     return RankingStore.scoreForPerformance(
+      level: widget.level,
       words: _discoveredWords.length,
       elapsedSeconds: _elapsedSeconds,
       errors: _errors,
@@ -396,6 +398,48 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       _score = _scoreFromStats();
     });
     _generateRound();
+  }
+
+  Future<void> _confirmExitGame() async {
+    if (_exitDialogOpen || !mounted) {
+      return;
+    }
+
+    _exitDialogOpen = true;
+    final shouldExit = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: AppTheme.card,
+        shape: RoundedRectangleBorder(
+          side: const BorderSide(color: AppTheme.rule),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        title: const Text(
+          'Sair da partida?',
+          style: TextStyle(fontWeight: FontWeight.w900),
+        ),
+        content: const Text(
+          'Seu progresso nesta rodada será perdido.',
+          style: TextStyle(height: 1.4),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Continuar jogando'),
+          ),
+          ElevatedButton.icon(
+            onPressed: () => Navigator.of(context).pop(true),
+            icon: const Icon(Icons.arrow_back_rounded, size: 18),
+            label: const Text('Sair'),
+          ),
+        ],
+      ),
+    );
+    _exitDialogOpen = false;
+
+    if (shouldExit == true && mounted) {
+      Navigator.of(context).pop();
+    }
   }
 
   void _handleDrag(Offset localPosition, _BoardMetrics metrics) {
@@ -609,11 +653,29 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
               onPressed: () => Navigator.of(context).pop(_VictoryAction.back),
               child: const Text('Voltar'),
             ),
-            TextButton.icon(
+            OutlinedButton.icon(
               onPressed: () =>
                   Navigator.of(context).pop(_VictoryAction.ranking),
               icon: const Icon(Icons.leaderboard_rounded, size: 18),
               label: const Text('Ranking'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppTheme.midnight,
+                backgroundColor: AppTheme.pressBlue.withValues(alpha: 0.08),
+                side: BorderSide(
+                  color: AppTheme.pressBlue.withValues(alpha: 0.42),
+                ),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 10,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                textStyle: const TextStyle(
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 0,
+                ),
+              ),
             ),
             ElevatedButton(
               onPressed: () => Navigator.of(context).pop(_VictoryAction.replay),
@@ -642,7 +704,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
           return;
         }
         setState(() {
-          _score = _startingScore;
+          _score = RankingStore.startingScoreForLevel(widget.level);
           _errors = 0;
           _hintsUsed = 0;
           _skipsUsed = 0;
@@ -679,178 +741,256 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
         statusBarIconBrightness: Brightness.dark,
         statusBarBrightness: Brightness.light,
       ),
-      child: Scaffold(
-        body: Stack(
-          children: [
-            AppBackdrop(
-              primary: widget.level.accent,
-              secondary: AppTheme.pressRed,
-              showAudioControl: false,
-              child: const SizedBox.expand(),
-            ),
-            IgnorePointer(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      AppTheme.midnight.withValues(alpha: 0.08),
-                      AppTheme.pressRed.withValues(alpha: 0.04),
-                      Colors.transparent,
-                    ],
-                    stops: const [0, 0.38, 1],
-                  ),
-                ),
+      child: PopScope(
+        canPop: false,
+        onPopInvokedWithResult: (didPop, result) {
+          if (didPop) {
+            return;
+          }
+          unawaited(_confirmExitGame());
+        },
+        child: Scaffold(
+          body: Stack(
+            children: [
+              AppBackdrop(
+                primary: widget.level.accent,
+                secondary: AppTheme.pressRed,
+                showAudioControl: false,
                 child: const SizedBox.expand(),
               ),
-            ),
-            SafeArea(
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  final layout = _GameLayoutMetrics.fromConstraints(
-                    constraints,
-                    gridSize: widget.level.gridSize,
-                  );
-
-                  return Padding(
-                    padding: EdgeInsets.fromLTRB(
-                      layout.horizontalPadding,
-                      layout.topPadding,
-                      layout.horizontalPadding,
-                      layout.bottomPadding,
+              IgnorePointer(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        AppTheme.midnight.withValues(alpha: 0.08),
+                        AppTheme.pressRed.withValues(alpha: 0.04),
+                        Colors.transparent,
+                      ],
+                      stops: const [0, 0.38, 1],
                     ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        RevealOnMount(
-                          child: _GameHeader(
-                            level: widget.level,
-                            score: _score,
-                            progress: progress,
-                            isPaused: _isPaused,
-                            compact: layout.compact,
-                            prioritizeBoard: layout.prioritizeBoard,
-                            onTogglePause: _togglePause,
-                          ),
-                        ),
-                        SizedBox(height: layout.sectionGap),
-                        Expanded(
-                          child: LayoutBuilder(
-                            builder: (context, contentConstraints) {
-                              final gap = layout.contentGap;
-                              final panelHeight = layout.minPanelHeight;
-                              final actionHeight = layout.actionPanelHeight;
+                  ),
+                  child: const SizedBox.expand(),
+                ),
+              ),
+              SafeArea(
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final layout = _GameLayoutMetrics.fromConstraints(
+                      constraints,
+                      gridSize: widget.level.gridSize,
+                    );
 
-                              return Column(
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
-                                children: [
-                                  RevealOnMount(
-                                    delay: const Duration(milliseconds: 80),
-                                    child: SizedBox(
-                                      height: panelHeight,
-                                      child: _RoundScenePanel(
-                                        currentWord: _currentWord,
-                                        targetWordLength: _targetWord.length,
-                                        hasError: _hasError,
-                                        isHitCelebrating: _isHitCelebrating,
-                                        typedHitWord: _typedHitWord,
-                                        targetWordCount: targetWordCount,
-                                        discoveredCount:
-                                            _discoveredWords.length,
-                                        compact: layout.compact,
+                    return Padding(
+                      padding: EdgeInsets.fromLTRB(
+                        layout.horizontalPadding,
+                        layout.topPadding,
+                        layout.horizontalPadding,
+                        layout.bottomPadding,
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          RevealOnMount(
+                            child: _LevelIdentityBar(
+                              level: widget.level,
+                              compact: layout.compact,
+                            ),
+                          ),
+                          SizedBox(height: layout.identityGap),
+                          RevealOnMount(
+                            delay: const Duration(milliseconds: 50),
+                            child: _GameHeader(
+                              score: _score,
+                              progress: progress,
+                              isPaused: _isPaused,
+                              compact: layout.compact,
+                              prioritizeBoard: layout.prioritizeBoard,
+                              onBack: () => unawaited(_confirmExitGame()),
+                              onTogglePause: _togglePause,
+                            ),
+                          ),
+                          SizedBox(height: layout.sectionGap),
+                          Expanded(
+                            child: LayoutBuilder(
+                              builder: (context, contentConstraints) {
+                                final gap = layout.contentGap;
+                                final panelHeight = layout.minPanelHeight;
+                                final actionHeight = layout.actionPanelHeight;
+
+                                return Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.stretch,
+                                  children: [
+                                    RevealOnMount(
+                                      delay: const Duration(milliseconds: 80),
+                                      child: SizedBox(
+                                        height: panelHeight,
+                                        child: _RoundScenePanel(
+                                          currentWord: _currentWord,
+                                          targetWordLength: _targetWord.length,
+                                          hasError: _hasError,
+                                          isHitCelebrating: _isHitCelebrating,
+                                          typedHitWord: _typedHitWord,
+                                          targetWordCount: targetWordCount,
+                                          discoveredCount:
+                                              _discoveredWords.length,
+                                          compact: layout.compact,
+                                        ),
                                       ),
                                     ),
-                                  ),
-                                  SizedBox(height: gap),
-                                  Expanded(
-                                    child: LayoutBuilder(
-                                      builder: (context, boardConstraints) {
-                                        final boardSize = min(
-                                          boardConstraints.maxWidth,
-                                          boardConstraints.maxHeight,
-                                        );
+                                    SizedBox(height: gap),
+                                    Expanded(
+                                      child: LayoutBuilder(
+                                        builder: (context, boardConstraints) {
+                                          final boardSize = min(
+                                            boardConstraints.maxWidth,
+                                            boardConstraints.maxHeight,
+                                          );
 
-                                        return RevealOnMount(
-                                          delay: const Duration(
-                                            milliseconds: 130,
-                                          ),
-                                          child: Center(
-                                            child: SizedBox.square(
-                                              dimension: boardSize,
-                                              child: AnimatedSwitcher(
-                                                duration: const Duration(
-                                                  milliseconds: 180,
+                                          return RevealOnMount(
+                                            delay: const Duration(
+                                              milliseconds: 130,
+                                            ),
+                                            child: Center(
+                                              child: SizedBox.square(
+                                                dimension: boardSize,
+                                                child: AnimatedSwitcher(
+                                                  duration: const Duration(
+                                                    milliseconds: 180,
+                                                  ),
+                                                  child: _isPaused
+                                                      ? _PausedBoard(
+                                                          key:
+                                                              const ValueKey<
+                                                                String
+                                                              >('paused'),
+                                                          accent: widget
+                                                              .level
+                                                              .accent,
+                                                          compact:
+                                                              layout.compact,
+                                                          onResume:
+                                                              _togglePause,
+                                                        )
+                                                      : _GridBoard(
+                                                          key:
+                                                              const ValueKey<
+                                                                String
+                                                              >('board'),
+                                                          grid: _grid,
+                                                          selectedIndices:
+                                                              _selectedIndices,
+                                                          hasError: _hasError,
+                                                          dragPosition:
+                                                              _dragPosition,
+                                                          gridSize: widget
+                                                              .level
+                                                              .gridSize,
+                                                          accent: widget
+                                                              .level
+                                                              .accent,
+                                                          compact:
+                                                              layout.compact,
+                                                          onPanStart:
+                                                              _handleDrag,
+                                                          onPanUpdate:
+                                                              _handleDrag,
+                                                          onPanEnd: _onDragEnd,
+                                                        ),
                                                 ),
-                                                child: _isPaused
-                                                    ? _PausedBoard(
-                                                        key: const ValueKey<
-                                                          String
-                                                        >('paused'),
-                                                        accent:
-                                                            widget.level.accent,
-                                                        compact: layout.compact,
-                                                        onResume: _togglePause,
-                                                      )
-                                                    : _GridBoard(
-                                                        key: const ValueKey<
-                                                          String
-                                                        >('board'),
-                                                        grid: _grid,
-                                                        selectedIndices:
-                                                            _selectedIndices,
-                                                        hasError: _hasError,
-                                                        dragPosition:
-                                                            _dragPosition,
-                                                        gridSize: widget
-                                                            .level
-                                                            .gridSize,
-                                                        accent:
-                                                            widget.level.accent,
-                                                        compact: layout.compact,
-                                                        onPanStart:
-                                                            _handleDrag,
-                                                        onPanUpdate:
-                                                            _handleDrag,
-                                                        onPanEnd: _onDragEnd,
-                                                      ),
                                               ),
                                             ),
-                                          ),
-                                        );
-                                      },
-                                    ),
-                                  ),
-                                  SizedBox(height: gap),
-                                  RevealOnMount(
-                                    delay: const Duration(milliseconds: 170),
-                                    child: SizedBox(
-                                      height: actionHeight,
-                                      child: _RoundActionPanel(
-                                        hint: _currentHint,
-                                        hintSuggested: _hintSuggested,
-                                        hintRevealed: _hintRevealed,
-                                        hintPenalty: _pointsPerHint,
-                                        skipPenalty: _pointsPerSkip,
-                                        compact: layout.compact,
-                                        onRevealHint: _revealHint,
-                                        onSkipWord: _skipWord,
+                                          );
+                                        },
                                       ),
                                     ),
-                                  ),
-                                ],
-                              );
-                            },
+                                    SizedBox(height: gap),
+                                    RevealOnMount(
+                                      delay: const Duration(milliseconds: 170),
+                                      child: SizedBox(
+                                        height: actionHeight,
+                                        child: _RoundActionPanel(
+                                          hint: _currentHint,
+                                          hintSuggested: _hintSuggested,
+                                          hintRevealed: _hintRevealed,
+                                          hintPenalty: _pointsPerHint,
+                                          skipPenalty: _pointsPerSkip,
+                                          compact: layout.compact,
+                                          onRevealHint: _revealHint,
+                                          onSkipWord: _skipWord,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                );
+                              },
+                            ),
                           ),
-                        ),
-                      ],
-                    ),
-                  );
-                },
+                        ],
+                      ),
+                    );
+                  },
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
+      ),
+    );
+  }
+}
+
+class _LevelIdentityBar extends StatelessWidget {
+  const _LevelIdentityBar({required this.level, required this.compact});
+
+  final GameLevel level;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    final iconSize = compact ? 34.0 : 38.0;
+
+    return Padding(
+      padding: EdgeInsets.symmetric(horizontal: compact ? 2 : 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            width: iconSize,
+            height: iconSize,
+            decoration: BoxDecoration(
+              color: level.accent,
+              borderRadius: BorderRadius.circular(9),
+              boxShadow: [
+                BoxShadow(
+                  color: level.accent.withValues(alpha: 0.28),
+                  blurRadius: 12,
+                  offset: const Offset(0, 5),
+                ),
+              ],
+            ),
+            child: Icon(
+              level.icon,
+              color: Colors.white,
+              size: compact ? 19 : 21,
+            ),
+          ),
+          const SizedBox(width: 9),
+          Text(
+            level.title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: AppTheme.midnight,
+              fontWeight: FontWeight.w900,
+              fontSize: compact ? 20 : 22,
+              letterSpacing: 0,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -858,21 +998,21 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
 
 class _GameHeader extends StatelessWidget {
   const _GameHeader({
-    required this.level,
     required this.score,
     required this.progress,
     required this.isPaused,
     required this.compact,
     required this.prioritizeBoard,
+    required this.onBack,
     required this.onTogglePause,
   });
 
-  final GameLevel level;
   final int score;
   final double progress;
   final bool isPaused;
   final bool compact;
   final bool prioritizeBoard;
+  final VoidCallback onBack;
   final VoidCallback onTogglePause;
 
   @override
@@ -887,11 +1027,6 @@ class _GameHeader extends StatelessWidget {
         : compact
         ? 20.0
         : 21.0;
-    final iconSize = prioritizeBoard
-        ? 40.0
-        : compact
-        ? 42.0
-        : 44.0;
 
     return Container(
       padding: EdgeInsets.all(padding),
@@ -912,38 +1047,9 @@ class _GameHeader extends StatelessWidget {
         children: [
           Row(
             children: [
-              const _HeaderBackButton(),
+              _HeaderBackButton(onPressed: onBack),
               SizedBox(width: prioritizeBoard ? 8 : 10),
-              Expanded(
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Container(
-                      width: iconSize,
-                      height: iconSize,
-                      decoration: BoxDecoration(
-                        color: level.accent,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Icon(level.icon, color: Colors.white),
-                    ),
-                    const SizedBox(width: 8),
-                    Flexible(
-                      child: Text(
-                        level.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.96),
-                          fontWeight: FontWeight.w900,
-                          fontSize: compact ? 15 : 17,
-                          letterSpacing: 0,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+              const Spacer(),
               SizedBox(width: compact ? 8 : 10),
               _HeaderPauseButton(
                 paused: isPaused,
@@ -1107,9 +1213,31 @@ class _RoundActionPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final showHintControl = hintSuggested || hintRevealed;
+    final hintRow = hintRevealed
+        ? _HintPanel(
+            hint: hint,
+            suggested: hintSuggested,
+            revealed: true,
+            hintPenalty: hintPenalty,
+            compact: compact,
+            onPressed: onRevealHint,
+          )
+        : showHintControl
+        ? _HintPanel(
+            hint: hint,
+            suggested: hintSuggested,
+            revealed: false,
+            hintPenalty: hintPenalty,
+            compact: compact,
+            onPressed: onRevealHint,
+          )
+        : const _HintWaitingPill();
 
     return Container(
-      padding: EdgeInsets.all(compact ? 10 : 12),
+      padding: EdgeInsets.symmetric(
+        horizontal: compact ? 10 : 12,
+        vertical: compact ? 10 : 12,
+      ),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topLeft,
@@ -1129,65 +1257,19 @@ class _RoundActionPanel extends StatelessWidget {
           ),
         ],
       ),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          if (hintRevealed) {
-            return Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                _HintPanel(
-                  hint: hint,
-                  suggested: hintSuggested,
-                  revealed: true,
-                  hintPenalty: hintPenalty,
-                  compact: compact,
-                  onPressed: onRevealHint,
-                ),
-                SizedBox(height: compact ? 6 : 8),
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: _SkipWordButton(
-                    penalty: skipPenalty,
-                    dense: compact,
-                    compact: compact,
-                    onPressed: onSkipWord,
-                  ),
-                ),
-              ],
-            );
-          }
-
-          return Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: showHintControl
-                        ? _HintPanel(
-                            hint: hint,
-                            suggested: hintSuggested,
-                            revealed: false,
-                            hintPenalty: hintPenalty,
-                            compact: compact,
-                            onPressed: onRevealHint,
-                          )
-                        : const _HintWaitingPill(),
-                  ),
-                  SizedBox(width: compact ? 8 : 10),
-                  _SkipWordButton(
-                    penalty: skipPenalty,
-                    dense: compact,
-                    compact: compact,
-                    onPressed: onSkipWord,
-                  ),
-                ],
-              ),
-            ],
-          );
-        },
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          hintRow,
+          SizedBox(height: compact ? 8 : 10),
+          _SkipWordButton(
+            penalty: skipPenalty,
+            dense: compact,
+            compact: compact,
+            onPressed: onSkipWord,
+          ),
+        ],
       ),
     );
   }
@@ -1199,19 +1281,19 @@ class _HintWaitingPill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      constraints: const BoxConstraints(minHeight: 42),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+      constraints: const BoxConstraints(minHeight: 50),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
       decoration: BoxDecoration(
-        color: AppTheme.midnight.withValues(alpha: 0.06),
+        color: AppTheme.midnight.withValues(alpha: 0.055),
         borderRadius: BorderRadius.circular(9),
-        border: Border.all(color: AppTheme.rule.withValues(alpha: 0.55)),
+        border: Border.all(color: AppTheme.rule.withValues(alpha: 0.72)),
       ),
       child: Row(
         children: [
           Icon(
             Icons.lightbulb_outline_rounded,
-            color: AppTheme.ink.withValues(alpha: 0.46),
-            size: 17,
+            color: AppTheme.pressBlue.withValues(alpha: 0.72),
+            size: 19,
           ),
           const SizedBox(width: 8),
           Expanded(
@@ -1220,9 +1302,9 @@ class _HintWaitingPill extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                color: AppTheme.ink.withValues(alpha: 0.58),
+                color: AppTheme.ink.withValues(alpha: 0.64),
                 fontWeight: FontWeight.w800,
-                fontSize: 12.5,
+                fontSize: 13.5,
                 letterSpacing: 0,
               ),
             ),
@@ -1362,14 +1444,14 @@ class _HintPanel extends StatelessWidget {
         width: double.infinity,
         child: Container(
           padding: EdgeInsets.symmetric(
-            horizontal: compact ? 8 : 10,
-            vertical: compact ? 6 : 7,
+            horizontal: compact ? 12 : 14,
+            vertical: compact ? 9 : 10,
           ),
           decoration: BoxDecoration(
-            color: AppTheme.pressGold.withValues(alpha: 0.18),
+            color: AppTheme.pressBlue.withValues(alpha: 0.1),
             borderRadius: BorderRadius.circular(9),
             border: Border.all(
-              color: AppTheme.pressGold.withValues(alpha: 0.42),
+              color: AppTheme.pressBlue.withValues(alpha: 0.34),
             ),
           ),
           child: Row(
@@ -1377,8 +1459,8 @@ class _HintPanel extends StatelessWidget {
             children: [
               Icon(
                 Icons.lightbulb_outline_rounded,
-                color: AppTheme.pressGold,
-                size: compact ? 13 : 14,
+                color: AppTheme.pressBlue,
+                size: compact ? 16 : 17,
               ),
               const SizedBox(width: 6),
               Expanded(
@@ -1389,7 +1471,7 @@ class _HintPanel extends StatelessWidget {
                   style: TextStyle(
                     color: AppTheme.midnight,
                     fontWeight: FontWeight.w800,
-                    fontSize: compact ? 12.5 : 13.5,
+                    fontSize: compact ? 13.5 : 14.5,
                     height: 1.22,
                   ),
                 ),
@@ -1406,36 +1488,31 @@ class _HintPanel extends StatelessWidget {
 
     return FilledButton.icon(
       onPressed: onPressed,
-      icon: Icon(
-        Icons.lightbulb_outline_rounded,
-        size: compact ? 16 : 18,
-      ),
+      icon: Icon(Icons.lightbulb_outline_rounded, size: compact ? 19 : 20),
       label: Text(
-        'Ver dica • -$hintPenalty pts',
+        'Ver dica  -$hintPenalty pts',
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
       ),
       style: FilledButton.styleFrom(
-        backgroundColor: AppTheme.pressGold,
-        foregroundColor: AppTheme.midnight,
-        elevation: 3,
-        shadowColor: AppTheme.midnight.withValues(alpha: 0.24),
+        backgroundColor: AppTheme.pressBlue,
+        foregroundColor: Colors.white,
+        elevation: 2,
+        shadowColor: AppTheme.pressBlue.withValues(alpha: 0.24),
         visualDensity: VisualDensity.compact,
         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        minimumSize: Size(0, compact ? 42 : 46),
+        minimumSize: Size(double.infinity, compact ? 50 : 54),
         padding: EdgeInsets.symmetric(
-          horizontal: compact ? 14 : 16,
-          vertical: compact ? 10 : 12,
+          horizontal: compact ? 18 : 20,
+          vertical: compact ? 13 : 14,
         ),
         shape: RoundedRectangleBorder(
-          side: BorderSide(
-            color: AppTheme.midnight.withValues(alpha: 0.18),
-          ),
+          side: BorderSide(color: Colors.white.withValues(alpha: 0.14)),
           borderRadius: BorderRadius.circular(8),
         ),
         textStyle: TextStyle(
           fontWeight: FontWeight.w900,
-          fontSize: compact ? 13 : 14,
+          fontSize: compact ? 14 : 15,
           letterSpacing: 0,
         ),
       ),
@@ -1460,31 +1537,31 @@ class _SkipWordButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return OutlinedButton.icon(
       onPressed: onPressed,
-      icon: Icon(Icons.skip_next_rounded, size: dense ? 16 : 17),
+      icon: Icon(Icons.skip_next_rounded, size: dense ? 19 : 20),
       label: Text(
-        'Pular • -$penalty pts',
+        'Pular palavra  -$penalty pts',
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
       ),
       style: OutlinedButton.styleFrom(
         foregroundColor: AppTheme.pressRed,
-        backgroundColor: AppTheme.pressRed.withValues(alpha: 0.06),
-        side: BorderSide(color: AppTheme.pressRed.withValues(alpha: 0.44)),
+        backgroundColor: AppTheme.pressRed.withValues(alpha: 0.075),
+        side: BorderSide(color: AppTheme.pressRed.withValues(alpha: 0.5)),
         visualDensity: VisualDensity.compact,
         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        minimumSize: Size(0, dense ? 42 : 46),
+        minimumSize: Size(double.infinity, dense ? 50 : 54),
         padding: EdgeInsets.symmetric(
-          horizontal: dense ? 12 : 14,
-          vertical: dense ? 10 : 12,
+          horizontal: dense ? 18 : 20,
+          vertical: dense ? 13 : 14,
         ),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(9)),
         textStyle: TextStyle(
           fontWeight: FontWeight.w900,
           fontSize: dense
-              ? 11.5
+              ? 13
               : compact
-              ? 12.5
-              : 13.5,
+              ? 14
+              : 15,
           letterSpacing: 0,
         ),
       ),
@@ -1822,6 +1899,7 @@ class _GameLayoutMetrics {
     required this.horizontalPadding,
     required this.topPadding,
     required this.bottomPadding,
+    required this.identityGap,
     required this.sectionGap,
     required this.contentGap,
     required this.minPanelHeight,
@@ -1847,6 +1925,7 @@ class _GameLayoutMetrics {
           : 12.0,
       topPadding: veryCompact ? 0.0 : 2.0,
       bottomPadding: veryCompact ? 8.0 : 14.0,
+      identityGap: veryCompact ? 5.0 : 6.0,
       sectionGap: prioritizeBoard
           ? 6.0
           : veryCompact
@@ -1863,10 +1942,10 @@ class _GameLayoutMetrics {
           ? 64.0
           : 70.0,
       actionPanelHeight: veryCompact
-          ? 108.0
+          ? 130.0
           : compact
-          ? 114.0
-          : 126.0,
+          ? 136.0
+          : 148.0,
       compact: compact,
       prioritizeBoard: prioritizeBoard,
     );
@@ -1875,6 +1954,7 @@ class _GameLayoutMetrics {
   final double horizontalPadding;
   final double topPadding;
   final double bottomPadding;
+  final double identityGap;
   final double sectionGap;
   final double contentGap;
   final double minPanelHeight;
@@ -1960,7 +2040,9 @@ class _SelectionPathPainter extends CustomPainter {
 }
 
 class _HeaderBackButton extends StatelessWidget {
-  const _HeaderBackButton();
+  const _HeaderBackButton({required this.onPressed});
+
+  final VoidCallback onPressed;
 
   @override
   Widget build(BuildContext context) {
@@ -1968,12 +2050,12 @@ class _HeaderBackButton extends StatelessWidget {
       color: Colors.white.withValues(alpha: 0.12),
       borderRadius: BorderRadius.circular(8),
       child: InkWell(
-        onTap: () => Navigator.of(context).maybePop(),
+        onTap: onPressed,
         borderRadius: BorderRadius.circular(8),
         child: const SizedBox(
-          width: 36,
-          height: 36,
-          child: Icon(Icons.arrow_back_rounded, color: Colors.white, size: 18),
+          width: 44,
+          height: 44,
+          child: Icon(Icons.arrow_back_rounded, color: Colors.white, size: 22),
         ),
       ),
     );
@@ -2002,12 +2084,12 @@ class _HeaderPauseButton extends StatelessWidget {
           onTap: onPressed,
           borderRadius: BorderRadius.circular(8),
           child: SizedBox(
-            width: compact ? 38 : 40,
-            height: compact ? 38 : 40,
+            width: compact ? 44 : 46,
+            height: compact ? 44 : 46,
             child: Icon(
               paused ? Icons.play_arrow_rounded : Icons.pause_rounded,
               color: Colors.white,
-              size: compact ? 20 : 22,
+              size: compact ? 23 : 25,
             ),
           ),
         ),
@@ -2030,6 +2112,7 @@ class _HeaderScorePill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
+      constraints: BoxConstraints(minHeight: compact ? 44 : 46),
       padding: EdgeInsets.symmetric(
         horizontal: compact ? 14 : 15,
         vertical: compact ? 8 : 9,

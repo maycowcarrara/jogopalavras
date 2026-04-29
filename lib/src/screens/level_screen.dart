@@ -22,6 +22,7 @@ class LevelScreen extends StatelessWidget {
       body: AppBackdrop(
         primary: AppTheme.pressBlue,
         secondary: AppTheme.pressRed,
+        topRightActions: const [_RankingActionButton()],
         child: SafeArea(
           child: LayoutBuilder(
             builder: (context, constraints) {
@@ -106,29 +107,48 @@ class _LevelHero extends StatelessWidget {
               label:
                   'Palavras de 4 a 9 letras • da nota curta ao caderno especial',
             ),
-            const SizedBox(height: 2),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: TextButton.icon(
-                style: TextButton.styleFrom(
-                  foregroundColor: Colors.white,
-                  minimumSize: const Size(0, 34),
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _RankingActionButton extends StatelessWidget {
+  const _RankingActionButton();
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: 'Ver ranking',
+      child: Tooltip(
+        message: 'Ranking',
+        child: Material(
+          color: Colors.white.withValues(alpha: 0.96),
+          borderRadius: BorderRadius.circular(8),
+          elevation: 10,
+          shadowColor: AppTheme.midnight.withValues(alpha: 0.28),
+          child: InkWell(
+            key: const ValueKey<String>('level_ranking_button'),
+            onTap: () {
+              Navigator.of(context).push(
+                appPageRoute<void>(
+                  settings: const RouteSettings(name: '/ranking'),
+                  builder: (_) => const RankingScreen(),
                 ),
-                onPressed: () {
-                  Navigator.of(context).push(
-                    appPageRoute<void>(
-                      settings: const RouteSettings(name: '/ranking'),
-                      builder: (_) => const RankingScreen(),
-                    ),
-                  );
-                },
-                icon: const Icon(Icons.leaderboard_rounded, size: 18),
-                label: const Text('Ver ranking'),
+              );
+            },
+            borderRadius: BorderRadius.circular(8),
+            child: const SizedBox.square(
+              dimension: 42,
+              child: Icon(
+                Icons.leaderboard_rounded,
+                color: AppTheme.pressBlue,
+                size: 21,
               ),
             ),
-          ],
+          ),
         ),
       ),
     );

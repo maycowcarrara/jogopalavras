@@ -1,14 +1,21 @@
 # Ranking publico e diagnostico
 
-O app pode usar ranking publico e envio remoto de diagnosticos quando for
-compilado com a URL da API:
+Em builds `release`, o app usa por padrao a API publica de ranking e envio
+remoto de diagnosticos:
+
+```text
+https://anagrama-oculto-ranking.maycowcarrara.workers.dev
+```
+
+Voce ainda pode informar outra API explicitamente no build:
 
 ```powershell
 C:\Flutter\flutter\bin\flutter.bat build appbundle --release --dart-define=RANKING_API_URL=https://anagrama-oculto-ranking.maycowcarrara.workers.dev
 ```
 
-Sem `RANKING_API_URL`, o app continua usando ranking local no aparelho e os
-diagnosticos ficam apenas na fila local.
+Em debug/test, sem `RANKING_API_URL`, o app continua usando ranking local no
+aparelho e os diagnosticos ficam apenas na fila local. Para desativar o ranking
+remoto em um build `release`, passe `--dart-define=RANKING_API_URL=`.
 
 ## API
 
@@ -176,7 +183,13 @@ npm --prefix workers/ranking-api install
 npm --prefix workers/ranking-api run deploy
 ```
 
-5. Compile o app com:
+5. Compile o app. Em `release`, a API publica ja e usada por padrao:
+
+```powershell
+npm run build:aab
+```
+
+Tambem existe o atalho explicito:
 
 ```powershell
 npm run build:aab:ranking:prod

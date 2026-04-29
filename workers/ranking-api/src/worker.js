@@ -3,7 +3,12 @@ const MAX_ENTRIES = 10;
 const MAX_LOG_EVENTS = 8;
 const MAX_LOGS_PER_MINUTE = 30;
 const LOG_TTL_SECONDS = 60 * 60 * 24 * 30;
-const STARTING_SCORE = 1000;
+const STARTING_SCORES = {
+  easy: 1000,
+  medium: 1250,
+  hard: 1500,
+  pautaLivre: 1450,
+};
 const POINTS_PER_WORD = 30;
 const POINTS_PER_SECOND = 1;
 const POINTS_PER_ERROR = 50;
@@ -191,7 +196,11 @@ function normalizeEntry(entry) {
   if (!LEVELS.has(level)) {
     return null;
   }
-  if (!Number.isInteger(score) || score < 0 || score > 1000) {
+  if (
+    !Number.isInteger(score) ||
+    score < 0 ||
+    score > startingScoreForLevel(level)
+  ) {
     return null;
   }
   if (!Number.isInteger(words) || words < 1 || words > 100) {
@@ -221,6 +230,7 @@ function normalizeEntry(entry) {
     initials,
     level,
     score: scoreForPerformance(
+      level,
       words,
       elapsedSeconds,
       errors,
@@ -237,6 +247,7 @@ function normalizeEntry(entry) {
 }
 
 function scoreForPerformance(
+  level,
   words,
   elapsedSeconds,
   errors,
@@ -245,13 +256,17 @@ function scoreForPerformance(
 ) {
   return Math.max(
     0,
-    STARTING_SCORE -
+    startingScoreForLevel(level) -
       words * POINTS_PER_WORD -
       elapsedSeconds * POINTS_PER_SECOND -
       errors * POINTS_PER_ERROR -
       hintsUsed * POINTS_PER_HINT -
       skipsUsed * POINTS_PER_SKIP,
   );
+}
+
+function startingScoreForLevel(level) {
+  return STARTING_SCORES[level] ?? STARTING_SCORES.easy;
 }
 
 function sortEntries(entries) {

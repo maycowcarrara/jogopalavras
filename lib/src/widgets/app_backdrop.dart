@@ -9,12 +9,14 @@ class AppBackdrop extends StatelessWidget {
     this.primary = AppTheme.pressBlue,
     this.secondary = AppTheme.pressRed,
     this.showAudioControl = true,
+    this.topRightActions = const [],
   });
 
   final Widget child;
   final Color primary;
   final Color secondary;
   final bool showAudioControl;
+  final List<Widget> topRightActions;
 
   @override
   Widget build(BuildContext context) {
@@ -45,13 +47,23 @@ class AppBackdrop extends StatelessWidget {
             child: const SizedBox.expand(),
           ),
           child,
-          if (showAudioControl)
+          if (showAudioControl || topRightActions.isNotEmpty)
             SafeArea(
               child: Align(
                 alignment: Alignment.topRight,
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(14, 14, 14, 0),
-                  child: AppAudioControl(),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      for (final action in topRightActions) ...[
+                        action,
+                        if (showAudioControl || action != topRightActions.last)
+                          const SizedBox(width: 8),
+                      ],
+                      if (showAudioControl) const AppAudioControl(),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -272,8 +284,8 @@ class AppAudioControlButton extends StatelessWidget {
             onTap: () => _showPanel(context),
             borderRadius: BorderRadius.circular(8),
             child: SizedBox.square(
-              dimension: dark ? 40 : 42,
-              child: Icon(_icon, color: foreground, size: 21),
+              dimension: dark ? 44 : 42,
+              child: Icon(_icon, color: foreground, size: dark ? 23 : 21),
             ),
           ),
         ),

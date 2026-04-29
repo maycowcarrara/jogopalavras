@@ -51,9 +51,17 @@ void main() {
     );
 
     expect(
-      RankingStore.scoreForPerformance(words: 10, elapsedSeconds: 71),
+      RankingStore.scoreForPerformance(
+        level: GameLevel.easy,
+        words: 10,
+        elapsedSeconds: 71,
+      ),
       greaterThan(
-        RankingStore.scoreForPerformance(words: 14, elapsedSeconds: 176),
+        RankingStore.scoreForPerformance(
+          level: GameLevel.easy,
+          words: 14,
+          elapsedSeconds: 176,
+        ),
       ),
     );
   });
@@ -70,17 +78,51 @@ void main() {
 
     expect(
       entry.score,
-      RankingStore.scoreForPerformance(words: 14, elapsedSeconds: 176),
+      RankingStore.scoreForPerformance(
+        level: GameLevel.easy,
+        words: 14,
+        elapsedSeconds: 176,
+      ),
+    );
+  });
+
+  test('usa pontuacao inicial por nivel', () {
+    expect(
+      RankingStore.startingScoreForLevel(GameLevel.easy),
+      RankingStore.easyStartingScore,
+    );
+    expect(
+      RankingStore.startingScoreForLevel(GameLevel.medium),
+      RankingStore.mediumStartingScore,
+    );
+    expect(
+      RankingStore.startingScoreForLevel(GameLevel.hard),
+      RankingStore.hardStartingScore,
+    );
+    expect(
+      RankingStore.startingScoreForLevel(GameLevel.pautaLivre),
+      RankingStore.pautaLivreStartingScore,
+    );
+
+    expect(
+      RankingStore.scoreForPerformance(
+        level: GameLevel.hard,
+        words: 0,
+        elapsedSeconds: 0,
+      ),
+      RankingStore.hardStartingScore,
     );
   });
 
   test('recalcula pontuacao com penalidade de pulos', () {
     final scoreWithoutSkip = RankingStore.scoreForPerformance(
+      level: GameLevel.easy,
       words: 10,
       elapsedSeconds: 60,
       hintsUsed: 1,
     );
     final scoreWithSkip = RankingStore.scoreForPerformance(
+      level: GameLevel.easy,
       words: 10,
       elapsedSeconds: 60,
       hintsUsed: 1,
