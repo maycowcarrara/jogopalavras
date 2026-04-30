@@ -1,13 +1,27 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:jogopalavras/src/app.dart';
 import 'package:jogopalavras/src/game/game_level.dart';
+import 'package:jogopalavras/src/navigation/app_route_observer.dart';
 import 'package:jogopalavras/src/screens/level_screen.dart';
 import 'package:jogopalavras/src/screens/ranking_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
+  final binding = TestWidgetsFlutterBinding.ensureInitialized();
+
+  setUp(() {
+    binding.platformDispatcher.accessibilityFeaturesTestValue =
+        const FakeAccessibilityFeatures(disableAnimations: true);
+  });
+
+  tearDown(() {
+    binding.platformDispatcher.clearAccessibilityFeaturesTestValue();
+  });
+
   testWidgets('abre a intro e navega para a seleção de nível', (tester) async {
     SharedPreferences.setMockInitialValues({});
     await tester.pumpWidget(const WordMazeApp());
@@ -75,6 +89,42 @@ void main() {
     );
 
     expect(routeRecorder.pushedRouteNames.last, '/game/easy');
+  });
+
+  testWidgets('mapa atualiza fases ao voltar de outra rota', (tester) async {
+    SharedPreferences.setMockInitialValues({'intro_seen_v1': true});
+    final navigatorKey = GlobalKey<NavigatorState>();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        navigatorKey: navigatorKey,
+        navigatorObservers: [appRouteObserver],
+        home: const LevelScreen(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('Próxima pauta 1/'), findsOneWidget);
+
+    unawaited(
+      navigatorKey.currentState!.push<void>(
+        MaterialPageRoute<void>(
+          builder: (_) => const Scaffold(body: Text('Rota temporária')),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final preferences = await SharedPreferences.getInstance();
+    await preferences.setStringList(
+      'word_progress_used_v1:easy',
+      List<String>.generate(10, (index) => 'PALAVRA_$index'),
+    );
+
+    navigatorKey.currentState!.pop();
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('Próxima pauta 2/'), findsOneWidget);
   });
 
   testWidgets('voltar na tela inicial pede confirmação antes de sair', (

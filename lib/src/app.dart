@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:jogopalavras/src/core/audio/game_music_service.dart';
 import 'package:jogopalavras/src/core/errors/app_error_reporter.dart';
 import 'package:jogopalavras/src/game/intro_preferences.dart';
+import 'package:jogopalavras/src/navigation/app_route_observer.dart';
 import 'package:jogopalavras/src/screens/intro_screen.dart';
 import 'package:jogopalavras/src/screens/level_screen.dart';
 import 'package:jogopalavras/src/theme/app_theme.dart';
@@ -53,7 +54,10 @@ class _WordMazeAppState extends State<WordMazeApp> with WidgetsBindingObserver {
       title: 'Entreletras: Palavras Ocultas',
       theme: AppTheme.lightTheme,
       debugShowCheckedModeBanner: false,
-      navigatorObservers: [AppErrorReporter.instance.routeObserver],
+      navigatorObservers: [
+        AppErrorReporter.instance.routeObserver,
+        appRouteObserver,
+      ],
       home: FutureBuilder<bool>(
         future: _hasSeenIntro,
         builder: (context, snapshot) {

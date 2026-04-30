@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math' as math;
+import 'dart:ui' show PathMetric;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -9,6 +10,7 @@ import 'package:jogopalavras/src/game/game_level.dart';
 import 'package:jogopalavras/src/game/word_bank.dart';
 import 'package:jogopalavras/src/game/word_progress_store.dart';
 import 'package:jogopalavras/src/navigation/app_page_route.dart';
+import 'package:jogopalavras/src/navigation/app_route_observer.dart';
 import 'package:jogopalavras/src/screens/game_screen.dart';
 import 'package:jogopalavras/src/screens/ranking_screen.dart';
 import 'package:jogopalavras/src/theme/app_theme.dart';
@@ -23,8 +25,9 @@ class LevelScreen extends StatefulWidget {
   State<LevelScreen> createState() => _LevelScreenState();
 }
 
-class _LevelScreenState extends State<LevelScreen> {
+class _LevelScreenState extends State<LevelScreen> with RouteAware {
   static const _autoScrollAlignment = 0.08;
+  static const _autoScrollStageAlignment = 0.42;
   static const _exitConfirmationWindow = Duration(seconds: 5);
 
   late Future<_CampaignSnapshot> _progressFuture = _loadCampaignSnapshot();
@@ -34,11 +37,17 @@ class _LevelScreenState extends State<LevelScreen> {
     GameLevel.medium: GlobalKey(),
     GameLevel.hard: GlobalKey(),
   };
+  final Map<String, GlobalKey> _subStageKeys = {};
   String? _lastAutoScrollTarget;
   bool _waitingForExitConfirmation = false;
   Timer? _exitConfirmationTimer;
+  PageRoute<dynamic>? _route;
 
   void _refreshProgress() {
+    if (!mounted) {
+      return;
+    }
+
     setState(() {
       _progressFuture = _loadCampaignSnapshot();
     });
@@ -64,7 +73,26 @@ class _LevelScreenState extends State<LevelScreen> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final route = ModalRoute.of(context);
+    if (route is PageRoute<dynamic> && route != _route) {
+      if (_route != null) {
+        appRouteObserver.unsubscribe(this);
+      }
+      _route = route;
+      appRouteObserver.subscribe(this, route);
+    }
+  }
+
+  @override
+  void didPopNext() {
+    _refreshProgress();
+  }
+
+  @override
   void dispose() {
+    appRouteObserver.unsubscribe(this);
     _exitConfirmationTimer?.cancel();
     _scrollController.dispose();
     super.dispose();
@@ -72,6 +100,11 @@ class _LevelScreenState extends State<LevelScreen> {
 
   void _scheduleAutoScroll(_CampaignSnapshot campaign) {
     final targetLevel = campaign.currentLevel;
+    final targetStage = campaign.currentSubStageFor(targetLevel);
+    if (targetLevel == GameLevel.easy && targetStage <= 3) {
+      return;
+    }
+
     final signature =
         '${targetLevel.name}:${campaign.completedSubStagesFor(targetLevel)}';
     if (_lastAutoScrollTarget == signature) {
@@ -84,18 +117,30 @@ class _LevelScreenState extends State<LevelScreen> {
         return;
       }
 
-      final context = _chapterKeys[targetLevel]?.currentContext;
-      if (context == null) {
+      final stageContext =
+          _subStageKeys[_subStageKey(targetLevel, targetStage)]?.currentContext;
+      final chapterContext = _chapterKeys[targetLevel]?.currentContext;
+      final targetContext = stageContext ?? chapterContext;
+      if (targetContext == null) {
         return;
       }
 
       Scrollable.ensureVisible(
-        context,
+        targetContext,
         duration: const Duration(milliseconds: 520),
         curve: Curves.easeOutCubic,
-        alignment: _autoScrollAlignment,
+        alignment: stageContext == null
+            ? _autoScrollAlignment
+            : _autoScrollStageAlignment,
       );
     });
+  }
+
+  GlobalKey _subStageKeyFor(GameLevel level, int stageNumber) {
+    return _subStageKeys.putIfAbsent(
+      _subStageKey(level, stageNumber),
+      GlobalKey.new,
+    );
   }
 
   Future<void> _openNextObjective(_CampaignSnapshot campaign) async {
@@ -191,6 +236,7 @@ class _LevelScreenState extends State<LevelScreen> {
                           _CampaignPath(
                             campaign: campaign,
                             chapterKeys: _chapterKeys,
+                            subStageKeyFor: _subStageKeyFor,
                             onProgressChanged: _refreshProgress,
                           ),
                         ],
@@ -344,11 +390,13 @@ class _CampaignPath extends StatelessWidget {
   const _CampaignPath({
     required this.campaign,
     required this.chapterKeys,
+    required this.subStageKeyFor,
     required this.onProgressChanged,
   });
 
   final _CampaignSnapshot campaign;
   final Map<GameLevel, GlobalKey> chapterKeys;
+  final GlobalKey Function(GameLevel level, int stageNumber) subStageKeyFor;
   final VoidCallback onProgressChanged;
 
   @override
@@ -371,6 +419,7 @@ class _CampaignPath extends StatelessWidget {
               key: chapterKeys[levels[index]],
               level: levels[index],
               campaign: campaign,
+              subStageKeyFor: subStageKeyFor,
               onProgressChanged: onProgressChanged,
             ),
           ),
@@ -463,11 +512,13 @@ class _LevelChapter extends StatelessWidget {
     super.key,
     required this.level,
     required this.campaign,
+    required this.subStageKeyFor,
     required this.onProgressChanged,
   });
 
   final GameLevel level;
   final _CampaignSnapshot campaign;
+  final GlobalKey Function(GameLevel level, int stageNumber) subStageKeyFor;
   final VoidCallback onProgressChanged;
 
   @override
@@ -585,6 +636,8 @@ class _LevelChapter extends StatelessWidget {
                 completed: completed,
                 accent: accent,
                 itemLabel: _subStageLabel(level),
+                keyForStage: (stageNumber) =>
+                    subStageKeyFor(level, stageNumber),
                 onSubStageTap: (stageNumber) =>
                     _handleSubStageTap(context, stageNumber),
               ),
@@ -850,6 +903,7 @@ class _SubStageTrail extends StatelessWidget {
     required this.completed,
     required this.accent,
     required this.itemLabel,
+    required this.keyForStage,
     required this.onSubStageTap,
   });
 
@@ -860,6 +914,7 @@ class _SubStageTrail extends StatelessWidget {
   final bool completed;
   final Color accent;
   final String itemLabel;
+  final GlobalKey Function(int stageNumber) keyForStage;
   final ValueChanged<int> onSubStageTap;
 
   @override
@@ -867,33 +922,43 @@ class _SubStageTrail extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         final width = constraints.maxWidth;
+        final reduceMotion =
+            MediaQuery.maybeOf(context)?.disableAnimations ?? false;
         const rowHeight = 78.0;
         final height = math.max(72.0, ((stageCount - 1) * rowHeight) + 72);
         final centers = _trailCenters(width: width, stageCount: stageCount);
 
-        return SizedBox(
-          height: height,
-          child: Stack(
-            clipBehavior: Clip.none,
-            children: [
-              Positioned.fill(
-                child: CustomPaint(
-                  painter: _NewspaperTrailBackgroundPainter(accent: accent),
-                ),
-              ),
-              Positioned.fill(
-                child: CustomPaint(
-                  painter: _SubStagePathPainter(
-                    centers: centers,
-                    completedStages: completed ? stageCount : completedStages,
-                    color: accent,
+        return _OffsetPressAnimation(
+          reduceMotion: reduceMotion,
+          builder: (context, paperPhase) {
+            return SizedBox(
+              height: height,
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Positioned.fill(
+                    child: CustomPaint(
+                      painter: _NewspaperTrailBackgroundPainter(accent: accent),
+                    ),
                   ),
-                ),
+                  Positioned.fill(
+                    child: CustomPaint(
+                      painter: _SubStagePathPainter(
+                        centers: centers,
+                        completedStages: completed
+                            ? stageCount
+                            : completedStages,
+                        color: accent,
+                        paperPhase: paperPhase,
+                      ),
+                    ),
+                  ),
+                  for (var number = 1; number <= stageCount; number++)
+                    _positionedSubStageDot(number, centers[number - 1]),
+                ],
               ),
-              for (var number = 1; number <= stageCount; number++)
-                _positionedSubStageDot(number, centers[number - 1]),
-            ],
-          ),
+            );
+          },
         );
       },
     );
@@ -903,8 +968,11 @@ class _SubStageTrail extends StatelessWidget {
     final isCurrent = unlocked && !completed && number == currentStage;
     final isCompleted = completed || number <= completedStages;
     final isLocked = !unlocked || (!completed && number > currentStage);
-    final width = isCurrent ? 168.0 : 152.0;
+    final width = isCurrent ? 170.0 : 156.0;
     final height = isCurrent ? 58.0 : 52.0;
+    final labelSide = number.isOdd
+        ? _SubStageLabelSide.left
+        : _SubStageLabelSide.right;
 
     return Positioned(
       left: center.dx - (width / 2),
@@ -912,6 +980,7 @@ class _SubStageTrail extends StatelessWidget {
       width: width,
       height: height,
       child: _SubStageDot(
+        key: keyForStage(number),
         number: number,
         itemLabel: itemLabel,
         completed: isCompleted,
@@ -919,6 +988,7 @@ class _SubStageTrail extends StatelessWidget {
         locked: isLocked,
         hasRanking: isCompleted,
         color: accent,
+        labelSide: labelSide,
         onTap: !isLocked ? () => onSubStageTap(number) : null,
       ),
     );
@@ -928,7 +998,7 @@ class _SubStageTrail extends StatelessWidget {
 List<Offset> _trailCenters({required double width, required int stageCount}) {
   const top = 36.0;
   const rowHeight = 78.0;
-  final left = math.min(width * 0.34, math.max(84.0, width - 84));
+  final left = math.min(math.max(88.0, width * 0.3), width / 2);
   final right = math.max(left, width - left);
 
   return [
@@ -937,16 +1007,84 @@ List<Offset> _trailCenters({required double width, required int stageCount}) {
   ];
 }
 
+class _OffsetPressAnimation extends StatefulWidget {
+  const _OffsetPressAnimation({
+    required this.reduceMotion,
+    required this.builder,
+  });
+
+  final bool reduceMotion;
+  final Widget Function(BuildContext context, double paperPhase) builder;
+
+  @override
+  State<_OffsetPressAnimation> createState() => _OffsetPressAnimationState();
+}
+
+class _OffsetPressAnimationState extends State<_OffsetPressAnimation>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(seconds: 18),
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    _syncAnimation();
+  }
+
+  @override
+  void didUpdateWidget(covariant _OffsetPressAnimation oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.reduceMotion != widget.reduceMotion) {
+      _syncAnimation();
+    }
+  }
+
+  void _syncAnimation() {
+    if (widget.reduceMotion) {
+      _controller
+        ..stop()
+        ..value = 0;
+      return;
+    }
+
+    if (!_controller.isAnimating) {
+      _controller.repeat();
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.reduceMotion) {
+      return widget.builder(context, 0);
+    }
+
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, _) => widget.builder(context, _controller.value),
+    );
+  }
+}
+
 class _SubStagePathPainter extends CustomPainter {
   const _SubStagePathPainter({
     required this.centers,
     required this.completedStages,
     required this.color,
+    required this.paperPhase,
   });
 
   final List<Offset> centers;
   final int completedStages;
   final Color color;
+  final double paperPhase;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -954,40 +1092,195 @@ class _SubStagePathPainter extends CustomPainter {
       return;
     }
 
-    final basePaint = Paint()
-      ..color = AppTheme.rule.withValues(alpha: 0.72)
-      ..strokeWidth = 7
-      ..strokeCap = StrokeCap.round
-      ..style = PaintingStyle.stroke;
-    final activePaint = Paint()
-      ..color = color.withValues(alpha: 0.88)
-      ..strokeWidth = 7
-      ..strokeCap = StrokeCap.round
-      ..style = PaintingStyle.stroke;
-
     for (var index = 1; index < centers.length; index++) {
-      final paint = index <= completedStages ? activePaint : basePaint;
       final previous = centers[index - 1];
       final current = centers[index];
-      final path = Path()..moveTo(previous.dx, previous.dy);
-      final controlX = (previous.dx + current.dx) / 2;
-      path.cubicTo(
-        controlX,
-        previous.dy,
-        controlX,
-        current.dy,
-        current.dx,
-        current.dy,
-      );
-      canvas.drawPath(path, paint);
+      final path = _segmentPath(previous, current);
+      final active = index <= completedStages;
+      _drawPaperPath(canvas, path, active: active);
     }
+  }
+
+  Path _segmentPath(Offset previous, Offset current) {
+    return Path()
+      ..moveTo(previous.dx, previous.dy)
+      ..lineTo(current.dx, current.dy);
+  }
+
+  void _drawPaperPath(Canvas canvas, Path path, {required bool active}) {
+    final paperColor = AppTheme.card.withValues(alpha: active ? 0.9 : 0.6);
+    final edgeColor = active
+        ? color.withValues(alpha: 0.2)
+        : AppTheme.rule.withValues(alpha: 0.2);
+
+    final shadowPaint = Paint()
+      ..color = AppTheme.midnight.withValues(alpha: active ? 0.06 : 0.03)
+      ..strokeWidth = 24
+      ..strokeCap = StrokeCap.butt
+      ..style = PaintingStyle.stroke;
+    final edgePaint = Paint()
+      ..color = edgeColor
+      ..strokeWidth = 20
+      ..strokeCap = StrokeCap.butt
+      ..style = PaintingStyle.stroke;
+    final paperPaint = Paint()
+      ..color = paperColor
+      ..strokeWidth = 16
+      ..strokeCap = StrokeCap.butt
+      ..style = PaintingStyle.stroke;
+    final centerFoldPaint = Paint()
+      ..color = Colors.white.withValues(alpha: active ? 0.42 : 0.2)
+      ..strokeWidth = 1.4
+      ..strokeCap = StrokeCap.butt
+      ..style = PaintingStyle.stroke;
+
+    canvas
+      ..drawPath(path, shadowPaint)
+      ..drawPath(path, edgePaint)
+      ..drawPath(path, paperPaint)
+      ..drawPath(path, centerFoldPaint);
+
+    _drawPrintedWeb(canvas, path, active: active);
+  }
+
+  void _drawPrintedWeb(Canvas canvas, Path path, {required bool active}) {
+    const spacing = 34.0;
+    const blockLength = 28.0;
+
+    for (final metric in path.computeMetrics()) {
+      final clipPath = _paperBandClip(metric, halfWidth: 7.4);
+      canvas
+        ..save()
+        ..clipPath(clipPath);
+
+      final start = (paperPhase * spacing).remainder(spacing) - spacing;
+      for (
+        var distance = start;
+        distance < metric.length;
+        distance += spacing
+      ) {
+        final blockStart = distance;
+        final blockEnd = distance + blockLength;
+        if (blockEnd <= 5 || blockStart >= metric.length - 5) {
+          continue;
+        }
+
+        final tangent = metric.getTangentForOffset(
+          (blockStart + (blockLength / 2)).clamp(0, metric.length),
+        );
+        if (tangent == null) {
+          continue;
+        }
+
+        final center = tangent.position;
+        _drawMiniNewspaperBlock(
+          canvas,
+          center: center,
+          active: active,
+          variant: (distance / spacing).floor(),
+        );
+      }
+
+      canvas.restore();
+    }
+  }
+
+  Path _paperBandClip(PathMetric metric, {required double halfWidth}) {
+    final startTangent = metric.getTangentForOffset(0);
+    final endTangent = metric.getTangentForOffset(metric.length);
+    if (startTangent == null || endTangent == null) {
+      return Path();
+    }
+
+    final normal = Offset(-startTangent.vector.dy, startTangent.vector.dx);
+    return Path()
+      ..moveTo(
+        startTangent.position.dx + (normal.dx * halfWidth),
+        startTangent.position.dy + (normal.dy * halfWidth),
+      )
+      ..lineTo(
+        endTangent.position.dx + (normal.dx * halfWidth),
+        endTangent.position.dy + (normal.dy * halfWidth),
+      )
+      ..lineTo(
+        endTangent.position.dx - (normal.dx * halfWidth),
+        endTangent.position.dy - (normal.dy * halfWidth),
+      )
+      ..lineTo(
+        startTangent.position.dx - (normal.dx * halfWidth),
+        startTangent.position.dy - (normal.dy * halfWidth),
+      )
+      ..close();
+  }
+
+  void _drawMiniNewspaperBlock(
+    Canvas canvas, {
+    required Offset center,
+    required bool active,
+    required int variant,
+  }) {
+    final inkAlpha = active ? 0.36 : 0.14;
+    final sectionPaint = Paint()
+      ..color = Colors.white.withValues(alpha: active ? 0.1 : 0.04)
+      ..style = PaintingStyle.fill;
+    final rulePaint = Paint()
+      ..color = AppTheme.ink.withValues(alpha: inkAlpha)
+      ..strokeWidth = active ? 1.05 : 0.75
+      ..strokeCap = StrokeCap.round;
+    final headlinePaint = Paint()
+      ..color = AppTheme.ink.withValues(alpha: active ? 0.42 : 0.18)
+      ..strokeWidth = active ? 1.8 : 1.1
+      ..strokeCap = StrokeCap.round;
+
+    canvas
+      ..save()
+      ..translate(center.dx, center.dy);
+
+    final sectionPath = Path()
+      ..moveTo(-22, -7.5)
+      ..lineTo(20, -6.2)
+      ..lineTo(22, 7.5)
+      ..lineTo(-20, 6.2)
+      ..close();
+    canvas.drawPath(sectionPath, sectionPaint);
+
+    final linePlan = variant.isEven
+        ? const <(double, double, double, bool)>[
+            (-18.0, 17.5, -6.0, true),
+            (-16.5, 9.0, -3.8, false),
+            (-18.0, 15.5, -1.7, false),
+            (-12.5, 18.0, 0.4, false),
+            (-18.0, 11.0, 2.6, false),
+            (-15.0, 17.0, 4.7, false),
+            (-18.0, 6.5, 6.8, false),
+          ]
+        : const <(double, double, double, bool)>[
+            (-16.0, 18.0, -6.2, true),
+            (-18.0, 12.5, -4.0, false),
+            (-14.0, 18.0, -1.8, false),
+            (-18.0, 16.0, 0.3, false),
+            (-10.5, 18.0, 2.5, false),
+            (-18.0, 8.0, 4.8, false),
+            (-13.0, 15.5, 6.9, false),
+          ];
+
+    for (final (startX, endX, y, headline) in linePlan) {
+      canvas.drawLine(
+        Offset(startX, y),
+        Offset(endX, y),
+        headline ? headlinePaint : rulePaint,
+      );
+    }
+
+    canvas.restore();
   }
 
   @override
   bool shouldRepaint(covariant _SubStagePathPainter oldDelegate) {
     return oldDelegate.centers != centers ||
         oldDelegate.completedStages != completedStages ||
-        oldDelegate.color != color;
+        oldDelegate.color != color ||
+        oldDelegate.paperPhase != paperPhase;
   }
 }
 
@@ -999,10 +1292,10 @@ class _NewspaperTrailBackgroundPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final rulePaint = Paint()
-      ..color = AppTheme.midnight.withValues(alpha: 0.035)
+      ..color = AppTheme.midnight.withValues(alpha: 0.026)
       ..strokeWidth = 1;
     final accentPaint = Paint()
-      ..color = accent.withValues(alpha: 0.08)
+      ..color = accent.withValues(alpha: 0.06)
       ..strokeWidth = 1.4;
 
     for (var y = 22.0; y < size.height; y += 39) {
@@ -1017,6 +1310,18 @@ class _NewspaperTrailBackgroundPainter extends CustomPainter {
         accentPaint,
       );
     }
+
+    final guidePaint = Paint()
+      ..color = AppTheme.rule.withValues(alpha: 0.18)
+      ..strokeWidth = 1.5
+      ..strokeCap = StrokeCap.round;
+    for (var y = 72.0; y < size.height; y += 78) {
+      canvas.drawLine(
+        Offset(size.width * 0.28, y),
+        Offset(size.width * 0.72, y),
+        guidePaint,
+      );
+    }
   }
 
   @override
@@ -1025,8 +1330,11 @@ class _NewspaperTrailBackgroundPainter extends CustomPainter {
   }
 }
 
+enum _SubStageLabelSide { left, right }
+
 class _SubStageDot extends StatelessWidget {
   const _SubStageDot({
+    super.key,
     required this.number,
     required this.itemLabel,
     required this.completed,
@@ -1034,6 +1342,7 @@ class _SubStageDot extends StatelessWidget {
     required this.locked,
     required this.hasRanking,
     required this.color,
+    required this.labelSide,
     required this.onTap,
   });
 
@@ -1044,6 +1353,7 @@ class _SubStageDot extends StatelessWidget {
   final bool locked;
   final bool hasRanking;
   final Color color;
+  final _SubStageLabelSide labelSide;
   final VoidCallback? onTap;
 
   @override
@@ -1058,6 +1368,9 @@ class _SubStageDot extends StatelessWidget {
         : locked
         ? AppTheme.ink.withValues(alpha: 0.34)
         : color;
+    final secondaryForeground = completed
+        ? Colors.white.withValues(alpha: 0.82)
+        : AppTheme.ink.withValues(alpha: locked ? 0.42 : 0.64);
     final borderColor = current
         ? color
         : completed
@@ -1086,36 +1399,20 @@ class _SubStageDot extends StatelessWidget {
             ),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(9),
-              border: Border.all(color: borderColor, width: current ? 3 : 1.5),
+              border: Border.all(
+                color: borderColor,
+                width: current ? 2.4 : 1.4,
+              ),
             ),
             child: Row(
               children: [
-                Container(
-                  width: current ? 36 : 32,
-                  height: current ? 36 : 32,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: completed
-                        ? Colors.white.withValues(alpha: 0.16)
-                        : color.withValues(alpha: locked ? 0.08 : 0.13),
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: completed
-                          ? Colors.white.withValues(alpha: 0.42)
-                          : color.withValues(alpha: locked ? 0.18 : 0.42),
-                    ),
-                  ),
-                  child: Text(
-                    '$number',
-                    maxLines: 1,
-                    style: TextStyle(
-                      color: foreground,
-                      fontSize: number >= 100 ? 11 : current ? 16 : 14,
-                      fontWeight: FontWeight.w900,
-                      height: 1,
-                      letterSpacing: 0,
-                    ),
-                  ),
+                _StagePageNumber(
+                  number: number,
+                  color: completed || current ? color : AppTheme.rule,
+                  foreground: foreground,
+                  completed: completed,
+                  current: current,
+                  locked: locked,
                 ),
                 const SizedBox(width: 8),
                 Expanded(
@@ -1128,11 +1425,7 @@ class _SubStageDot extends StatelessWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          color: completed
-                              ? Colors.white.withValues(alpha: 0.82)
-                              : AppTheme.ink.withValues(
-                                  alpha: locked ? 0.42 : 0.64,
-                                ),
+                          color: secondaryForeground,
                           fontSize: 10,
                           fontWeight: FontWeight.w900,
                           height: 1,
@@ -1150,11 +1443,7 @@ class _SubStageDot extends StatelessWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          color: completed
-                              ? Colors.white
-                              : AppTheme.ink.withValues(
-                                  alpha: locked ? 0.34 : 0.72,
-                                ),
+                          color: completed ? Colors.white : foreground,
                           fontSize: 12,
                           fontWeight: FontWeight.w900,
                           height: 1,
@@ -1170,17 +1459,146 @@ class _SubStageDot extends StatelessWidget {
                     size: 18,
                   ),
                 if (hasRanking && !completed)
-                  Icon(
-                    Icons.leaderboard_rounded,
-                    color: foreground,
-                    size: 16,
-                  ),
+                  Icon(Icons.leaderboard_rounded, color: foreground, size: 16),
               ],
             ),
           ),
         ),
       ),
     );
+  }
+}
+
+class _StagePageNumber extends StatelessWidget {
+  const _StagePageNumber({
+    required this.number,
+    required this.color,
+    required this.foreground,
+    required this.completed,
+    required this.current,
+    required this.locked,
+  });
+
+  final int number;
+  final Color color;
+  final Color foreground;
+  final bool completed;
+  final bool current;
+  final bool locked;
+
+  @override
+  Widget build(BuildContext context) {
+    final width = current ? 36.0 : 32.0;
+    final height = current ? 40.0 : 36.0;
+
+    return SizedBox(
+      width: width,
+      height: height,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          CustomPaint(
+            size: Size(width, height),
+            painter: _StagePagePainter(
+              color: color,
+              completed: completed,
+              current: current,
+              locked: locked,
+            ),
+          ),
+          Text(
+            '$number',
+            maxLines: 1,
+            style: TextStyle(
+              color: foreground,
+              fontSize: number >= 100
+                  ? 10
+                  : current
+                  ? 15
+                  : 13,
+              fontWeight: FontWeight.w900,
+              height: 1,
+              letterSpacing: 0,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StagePagePainter extends CustomPainter {
+  const _StagePagePainter({
+    required this.color,
+    required this.completed,
+    required this.current,
+    required this.locked,
+  });
+
+  final Color color;
+  final bool completed;
+  final bool current;
+  final bool locked;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final active = completed || current;
+    final pageRect = RRect.fromRectAndRadius(
+      Rect.fromLTWH(2, 2, size.width - 4, size.height - 4),
+      const Radius.circular(5),
+    );
+    final foldPath = Path()
+      ..moveTo(size.width - 11, 2)
+      ..lineTo(size.width - 2, 11)
+      ..lineTo(size.width - 11, 11)
+      ..close();
+
+    final shadowPaint = Paint()
+      ..color = AppTheme.midnight.withValues(alpha: current ? 0.16 : 0.09)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2.4);
+    final pagePaint = Paint()
+      ..color = completed
+          ? Colors.white.withValues(alpha: 0.16)
+          : AppTheme.card.withValues(alpha: locked ? 0.72 : 0.98);
+    final rimPaint = Paint()
+      ..color = completed
+          ? Colors.white.withValues(alpha: 0.42)
+          : color.withValues(alpha: locked ? 0.26 : 0.66)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = current ? 1.6 : 1.2;
+    final foldPaint = Paint()
+      ..color = color.withValues(alpha: active ? 0.24 : 0.12)
+      ..style = PaintingStyle.fill;
+    final rulePaint = Paint()
+      ..color = completed
+          ? Colors.white.withValues(alpha: 0.28)
+          : AppTheme.ink.withValues(alpha: locked ? 0.12 : 0.2)
+      ..strokeWidth = 0.9
+      ..strokeCap = StrokeCap.round;
+
+    canvas
+      ..drawRRect(pageRect.shift(const Offset(0, 2)), shadowPaint)
+      ..drawRRect(pageRect, pagePaint)
+      ..drawPath(foldPath, foldPaint)
+      ..drawRRect(pageRect, rimPaint);
+
+    final left = size.width * 0.22;
+    final right = size.width * 0.78;
+    for (final y in <double>[
+      size.height * 0.26,
+      size.height * 0.72,
+      size.height * 0.82,
+    ]) {
+      canvas.drawLine(Offset(left, y), Offset(right, y), rulePaint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _StagePagePainter oldDelegate) {
+    return oldDelegate.color != color ||
+        oldDelegate.completed != completed ||
+        oldDelegate.current != current ||
+        oldDelegate.locked != locked;
   }
 }
 
@@ -1191,21 +1609,113 @@ class _ChapterConnector extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      height: 34,
-      child: Center(
-        child: Container(
-          width: 7,
-          height: 34,
-          decoration: BoxDecoration(
-            color: completed
-                ? AppTheme.pressGreen
-                : AppTheme.rule.withValues(alpha: 0.8),
-            borderRadius: BorderRadius.circular(999),
+    final reduceMotion =
+        MediaQuery.maybeOf(context)?.disableAnimations ?? false;
+
+    return _OffsetPressAnimation(
+      reduceMotion: reduceMotion,
+      builder: (context, paperPhase) {
+        return SizedBox(
+          height: 50,
+          child: Center(
+            child: CustomPaint(
+              size: const Size(90, 50),
+              painter: _ChapterConnectorPainter(
+                completed: completed,
+                paperPhase: paperPhase,
+              ),
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
+  }
+}
+
+class _ChapterConnectorPainter extends CustomPainter {
+  const _ChapterConnectorPainter({
+    required this.completed,
+    required this.paperPhase,
+  });
+
+  final bool completed;
+  final double paperPhase;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final color = completed ? AppTheme.pressGreen : AppTheme.rule;
+    final pulse = math.sin(paperPhase * math.pi * 2) * 1.3;
+    _drawPageBundle(canvas, center + Offset(0, -4 + pulse), color);
+    _drawTransferArrow(canvas, center + const Offset(0, 19), color);
+  }
+
+  void _drawPageBundle(Canvas canvas, Offset center, Color color) {
+    final pagePaint = Paint()
+      ..color = completed
+          ? AppTheme.card.withValues(alpha: 0.92)
+          : AppTheme.newsprint.withValues(alpha: 0.68)
+      ..style = PaintingStyle.fill;
+    final edgePaint = Paint()
+      ..color = color.withValues(alpha: completed ? 0.36 : 0.2)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 0.8;
+    final rulePaint = Paint()
+      ..color = AppTheme.ink.withValues(alpha: completed ? 0.18 : 0.08)
+      ..strokeWidth = 0.7
+      ..strokeCap = StrokeCap.round;
+
+    final shadowPaint = Paint()
+      ..color = AppTheme.midnight.withValues(alpha: completed ? 0.1 : 0.05)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2.5);
+
+    for (var index = 0; index < 3; index++) {
+      final offset = Offset(index * 2.5 - 2.5, index * -2.0);
+      final rect = RRect.fromRectAndRadius(
+        Rect.fromCenter(center: center + offset, width: 40, height: 19),
+        const Radius.circular(3),
+      );
+      if (index == 0) {
+        canvas.drawRRect(rect.shift(const Offset(0, 2)), shadowPaint);
+      }
+      canvas
+        ..drawRRect(rect, pagePaint)
+        ..drawRRect(rect, edgePaint);
+    }
+
+    canvas
+      ..drawLine(
+        center + const Offset(-9, -4),
+        center + const Offset(8, -4),
+        rulePaint,
+      )
+      ..drawLine(
+        center + const Offset(-8, 0),
+        center + const Offset(10, 0),
+        rulePaint,
+      );
+  }
+
+  void _drawTransferArrow(Canvas canvas, Offset tip, Color color) {
+    final arrowPaint = Paint()
+      ..color = color.withValues(alpha: completed ? 0.58 : 0.28)
+      ..strokeWidth = 2.2
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+
+    final path = Path()
+      ..moveTo(tip.dx, tip.dy - 10)
+      ..lineTo(tip.dx, tip.dy - 1)
+      ..moveTo(tip.dx - 4, tip.dy - 5)
+      ..lineTo(tip.dx, tip.dy)
+      ..lineTo(tip.dx + 4, tip.dy - 5);
+    canvas.drawPath(path, arrowPaint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _ChapterConnectorPainter oldDelegate) {
+    return oldDelegate.completed != completed ||
+        oldDelegate.paperPhase != paperPhase;
   }
 }
 
@@ -1694,6 +2204,10 @@ class _CampaignSnapshot {
     final usedWords = (usedWordCounts[level] ?? 0).clamp(0, totalWords).toInt();
     return ((usedWords / totalWords) * 100).floor();
   }
+}
+
+String _subStageKey(GameLevel level, int stageNumber) {
+  return '${level.name}:$stageNumber';
 }
 
 String _chapterTitle(GameLevel level) => switch (level) {

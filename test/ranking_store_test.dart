@@ -179,6 +179,37 @@ void main() {
     expect(await RankingStore.instance.loadLastInitials(), 'MAYCO');
   });
 
+  test('ignora salvamento local repetido da mesma rodada', () async {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+    final originalEntry = RankingEntry(
+      initials: 'MAYCO',
+      level: GameLevel.easy,
+      score: 150,
+      words: 10,
+      elapsedSeconds: 90,
+      completedAt: DateTime(2026, 4, 28, 12, 30),
+    );
+    final repeatedEntry = RankingEntry(
+      initials: originalEntry.initials,
+      level: originalEntry.level,
+      score: originalEntry.score,
+      words: originalEntry.words,
+      elapsedSeconds: originalEntry.elapsedSeconds,
+      completedAt: originalEntry.completedAt.add(const Duration(seconds: 5)),
+    );
+
+    await RankingStore.instance.saveEntry(originalEntry);
+    await RankingStore.instance.saveEntry(repeatedEntry);
+
+    final entries = await RankingStore.instance.loadEntries(
+      level: GameLevel.easy,
+    );
+
+    expect(entries, hasLength(1));
+    expect(entries.single.initials, 'MAYCO');
+    expect(entries.single.completedAt, originalEntry.completedAt);
+  });
+
   test('mantem rankings locais separados por fase', () async {
     SharedPreferences.setMockInitialValues(<String, Object>{});
     final now = DateTime(2026, 4, 28);

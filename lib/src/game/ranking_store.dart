@@ -303,14 +303,14 @@ class RankingStore {
         )
         .toList();
 
-    _sortEntries(entries);
-    return entries;
+    final dedupedEntries = _dedupeEntries(entries);
+    _sortEntries(dedupedEntries);
+    return dedupedEntries;
   }
 
   Future<List<RankingEntry>> _saveLocalEntry(RankingEntry entry) async {
     final preferences = await SharedPreferences.getInstance();
-    final entries = await _loadLocalEntries();
-    entries.add(entry);
+    final entries = _dedupeEntries([...await _loadLocalEntries(), entry]);
     final groupedEntries = <RankingEntry>[];
     final buckets = <String, List<RankingEntry>>{};
     for (final entry in entries) {
@@ -525,18 +525,23 @@ class RankingStore {
     List<RankingEntry> primaryEntries,
     List<RankingEntry> fallbackEntries,
   ) {
-    final seen = <String>{};
-    final merged = <RankingEntry>[];
+    final merged = _dedupeEntries([...primaryEntries, ...fallbackEntries]);
+    _sortEntries(merged);
+    return merged;
+  }
 
-    for (final entry in [...primaryEntries, ...fallbackEntries]) {
+  static List<RankingEntry> _dedupeEntries(List<RankingEntry> entries) {
+    final seen = <String>{};
+    final deduped = <RankingEntry>[];
+
+    for (final entry in entries) {
       final key = _entryKey(entry);
       if (seen.add(key)) {
-        merged.add(entry);
+        deduped.add(entry);
       }
     }
 
-    _sortEntries(merged);
-    return merged;
+    return deduped;
   }
 
   static String _entryKey(RankingEntry entry) {
@@ -544,13 +549,19 @@ class RankingStore {
       entry.initials,
       entry.level.name,
       entry.stageNumber,
-      entry.score,
+      scoreForPerformance(
+        level: entry.level,
+        words: entry.words,
+        elapsedSeconds: entry.elapsedSeconds,
+        errors: entry.errors,
+        hintsUsed: entry.hintsUsed,
+        skipsUsed: entry.skipsUsed,
+      ),
       entry.words,
       entry.elapsedSeconds,
       entry.errors,
       entry.hintsUsed,
       entry.skipsUsed,
-      entry.completedAt.toUtc().millisecondsSinceEpoch,
     ].join(':');
   }
 

@@ -119,8 +119,7 @@ async function handlePost(request, env) {
 
   await reserveLegacyInitials(env, [entry]);
   const entries = await readLevel(env, entry.level, entry.stageNumber);
-  entries.push(entry);
-  const ranking = sortEntries(entries);
+  const ranking = sortEntries(dedupeEntries([...entries, entry]));
   await env.RANKING_KV.put(
     keyFor(entry.level, entry.stageNumber),
     JSON.stringify(ranking),
@@ -426,6 +425,35 @@ function sortEntries(entries) {
     }
     return new Date(a.completedAt) - new Date(b.completedAt);
   });
+}
+
+function dedupeEntries(entries) {
+  const seen = new Set();
+  const deduped = [];
+
+  for (const entry of entries) {
+    const key = entryKey(entry);
+    if (!seen.has(key)) {
+      seen.add(key);
+      deduped.push(entry);
+    }
+  }
+
+  return deduped;
+}
+
+function entryKey(entry) {
+  return [
+    entry.initials,
+    entry.level,
+    entry.stageNumber,
+    entry.score,
+    entry.words,
+    entry.elapsedSeconds,
+    entry.errors,
+    entry.hintsUsed,
+    entry.skipsUsed,
+  ].join(":");
 }
 
 function keyFor(level, stageNumber = 0) {

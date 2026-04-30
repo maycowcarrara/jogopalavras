@@ -237,6 +237,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   bool _hasError = false;
   bool _isPreparingRound = true;
   bool _isHitCelebrating = false;
+  bool _isCompletingRound = false;
   bool _isPaused = false;
   bool _exitDialogOpen = false;
   bool _pausedByLifecycle = false;
@@ -569,7 +570,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _onDragEnd() async {
-    if (_isPaused || _isHitCelebrating) {
+    if (_isPaused || _isHitCelebrating || _isCompletingRound) {
       return;
     }
 
@@ -595,6 +596,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       }
 
       if (completedWords >= _roundTargetWordCount) {
+        _isCompletingRound = true;
         _scoreTimer?.cancel();
         await GameMusicService.instance.playEndOfGame();
         final entry = await _completedRankingEntry();
