@@ -78,6 +78,77 @@ class RankingEntry {
   }
 }
 
+class RankingEntriesResult {
+  const RankingEntriesResult({
+    required this.entries,
+    required this.startPosition,
+    required this.totalEntries,
+    this.highlightedPosition,
+  });
+
+  factory RankingEntriesResult.fromFullEntries(
+    List<RankingEntry> entries, {
+    RankingEntry? highlightedEntry,
+    int? limit,
+  }) {
+    final rankedEntries = RankingStore.bestEntries(entries);
+    final highlightedPosition = highlightedEntry == null
+        ? null
+        : rankedEntries.indexWhere(
+                (entry) =>
+                    RankingStore.samePerformance(entry, highlightedEntry),
+              ) +
+              1;
+
+    if (highlightedEntry != null &&
+        highlightedPosition != null &&
+        highlightedPosition > 0) {
+      return RankingEntriesResult.windowAround(
+        rankedEntries,
+        highlightedPosition: highlightedPosition,
+      );
+    }
+
+    final cappedEntries = limit == null || limit <= 0
+        ? rankedEntries
+        : rankedEntries.take(limit).toList();
+    return RankingEntriesResult(
+      entries: cappedEntries,
+      startPosition: cappedEntries.isEmpty ? 0 : 1,
+      totalEntries: rankedEntries.length,
+    );
+  }
+
+  factory RankingEntriesResult.windowAround(
+    List<RankingEntry> rankedEntries, {
+    required int highlightedPosition,
+    int neighbors = 5,
+  }) {
+    if (highlightedPosition <= 0 || rankedEntries.isEmpty) {
+      return RankingEntriesResult.fromFullEntries(rankedEntries);
+    }
+
+    final highlightIndex = highlightedPosition - 1;
+    final start = (highlightIndex - neighbors).clamp(0, rankedEntries.length);
+    final end = (highlightIndex + neighbors + 1).clamp(0, rankedEntries.length);
+    return RankingEntriesResult(
+      entries: rankedEntries.sublist(start, end),
+      startPosition: start + 1,
+      totalEntries: rankedEntries.length,
+      highlightedPosition: highlightedPosition,
+    );
+  }
+
+  final List<RankingEntry> entries;
+  final int startPosition;
+  final int totalEntries;
+  final int? highlightedPosition;
+
+  int get endPosition =>
+      entries.isEmpty ? 0 : startPosition + entries.length - 1;
+  bool get isPartial => entries.length < totalEntries;
+}
+
 enum InitialsUpdateStatus { saved, invalid, unavailable, cooldown }
 
 class InitialsUpdateResult {
@@ -123,7 +194,13 @@ class RankingStore {
   static const String _lastInitialsChangedAtKey =
       'ranking_last_initials_changed_at_v1';
   static const String _playerIdKey = 'ranking_player_id_v1';
+  static const String _stagePositionsKey = 'ranking_stage_positions_v1';
+  static const String _stagePositionsSyncedAtKey =
+      'ranking_stage_positions_synced_at_v1';
+  static const String _entriesCacheKey = 'ranking_entries_cache_v1';
   static const Duration initialsChangeCooldown = Duration(days: 30);
+  static const Duration entriesCacheTtl = Duration(minutes: 10);
+  static const Duration stagePositionsCacheTtl = Duration(minutes: 10);
   static const String _productionApiBaseUrl =
       'https://anagrama-oculto-ranking.maycowcarrara.workers.dev';
   static const String _apiBaseUrl = String.fromEnvironment(
@@ -143,37 +220,337 @@ class RankingStore {
   Future<List<RankingEntry>> loadEntries({
     GameLevel? level,
     int? stageNumber,
+    int? limit,
+    RankingEntry? aroundEntry,
+    bool forceRefresh = false,
+  }) async {
+    final result = await loadEntriesResult(
+      level: level,
+      stageNumber: stageNumber,
+      limit: limit,
+      aroundEntry: aroundEntry,
+      forceRefresh: forceRefresh,
+    );
+    return result.entries;
+  }
+
+  Future<RankingEntriesResult> loadEntriesResult({
+    GameLevel? level,
+    int? stageNumber,
+    int? limit,
+    RankingEntry? aroundEntry,
+    bool forceRefresh = false,
   }) async {
     final localEntries = await _loadLocalEntries(
       level: level,
       stageNumber: stageNumber,
     );
 
-    if (_apiBaseUrl.isNotEmpty) {
-      final remoteEntries = await _loadRemoteEntries(
+    if (!forceRefresh) {
+      final cachedResult = await _loadCachedEntriesResult(
         level: level,
         stageNumber: stageNumber,
+        limit: limit,
+        aroundEntry: aroundEntry,
       );
-      if (remoteEntries != null) {
-        return _mergedEntries(remoteEntries, localEntries);
+      if (cachedResult != null) {
+        return _mergeResult(cachedResult, localEntries, aroundEntry);
       }
     }
 
-    return localEntries;
+    if (_apiBaseUrl.isNotEmpty) {
+      final remoteResult = await _loadRemoteEntriesResult(
+        level: level,
+        stageNumber: stageNumber,
+        limit: limit,
+        aroundEntry: aroundEntry,
+      );
+      if (remoteResult != null) {
+        final result = _mergeResult(remoteResult, localEntries, aroundEntry);
+        await _saveCachedEntriesResult(
+          result,
+          level: level,
+          stageNumber: stageNumber,
+          limit: limit,
+          aroundEntry: aroundEntry,
+        );
+        return result;
+      }
+    }
+
+    return RankingEntriesResult.fromFullEntries(
+      localEntries,
+      highlightedEntry: aroundEntry,
+      limit: limit,
+    );
   }
 
   Future<List<RankingEntry>> saveEntry(RankingEntry entry) async {
+    final result = await saveEntryResult(entry);
+    return result.entries;
+  }
+
+  Future<RankingEntriesResult> saveEntryResult(RankingEntry entry) async {
     await saveLastInitials(entry.initials);
     final localEntries = await _saveLocalEntry(entry);
 
     if (_apiBaseUrl.isNotEmpty) {
-      final remoteEntries = await _saveRemoteEntry(entry);
-      if (remoteEntries != null) {
-        return _mergedEntries(remoteEntries, localEntries);
+      final remoteResult = await _saveRemoteEntryResult(entry);
+      if (remoteResult != null) {
+        final result = _mergeResult(remoteResult, localEntries, entry);
+        await cacheStagePositionForEntry(entry, result.entries);
+        await _saveCachedEntriesResult(
+          result,
+          level: entry.level,
+          stageNumber: entry.stageNumber > 0 ? entry.stageNumber : null,
+          aroundEntry: entry,
+        );
+        return result;
       }
     }
 
-    return localEntries;
+    await cacheStagePositionForEntry(entry, localEntries);
+    return RankingEntriesResult.fromFullEntries(
+      localEntries,
+      highlightedEntry: entry,
+    );
+  }
+
+  Future<Map<String, int>> loadCachedStagePositions() async {
+    final initials = await loadLastInitials();
+    if (initials.isEmpty) {
+      return const <String, int>{};
+    }
+
+    final preferences = await SharedPreferences.getInstance();
+    final rawPositions = preferences.getString(_stagePositionsKey);
+    if (rawPositions == null) {
+      return const <String, int>{};
+    }
+
+    try {
+      final decoded = jsonDecode(rawPositions);
+      if (decoded is! Map<String, dynamic>) {
+        return const <String, int>{};
+      }
+
+      final positions = <String, int>{};
+      for (final MapEntry(:key, :value) in decoded.entries) {
+        final parts = key.split(':');
+        if (parts.length != 3 || parts.first != initials) {
+          continue;
+        }
+
+        final stageNumber = int.tryParse(parts[2]) ?? 0;
+        final position = value is int ? value : int.tryParse('$value') ?? 0;
+        if (stageNumber >= 0 && position > 0) {
+          positions['${parts[1]}:$stageNumber'] = position;
+        }
+      }
+
+      return positions;
+    } on Object {
+      return const <String, int>{};
+    }
+  }
+
+  Future<Map<String, int>> syncCachedStagePositions({
+    bool forceRefresh = false,
+  }) async {
+    final cachedPositions = await loadCachedStagePositions();
+    final initials = await loadLastInitials();
+    if (_apiBaseUrl.isEmpty || initials.isEmpty) {
+      return cachedPositions;
+    }
+
+    final preferences = await SharedPreferences.getInstance();
+    if (!forceRefresh) {
+      final syncedAt = DateTime.tryParse(
+        preferences.getString(_stagePositionsSyncedAtKey) ?? '',
+      );
+      if (syncedAt != null &&
+          DateTime.now().difference(syncedAt) < stagePositionsCacheTtl) {
+        return cachedPositions;
+      }
+    }
+
+    try {
+      final response = await http
+          .get(_positionsUri(initials: initials))
+          .timeout(_requestTimeout);
+      if (response.statusCode != 200) {
+        return cachedPositions;
+      }
+
+      final decoded = jsonDecode(response.body);
+      if (decoded is! Map<String, dynamic>) {
+        return cachedPositions;
+      }
+
+      final rawPositions = decoded['positions'];
+      if (rawPositions is! Map<String, dynamic>) {
+        return cachedPositions;
+      }
+
+      final positions = <String, int>{};
+      for (final MapEntry(:key, :value) in rawPositions.entries) {
+        final parts = key.split(':');
+        if (parts.length != 2) {
+          continue;
+        }
+
+        final level = _levelFromName(parts[0]);
+        final stageNumber = int.tryParse(parts[1]) ?? 0;
+        final position = value is int ? value : int.tryParse('$value') ?? 0;
+        if (stageNumber >= 0 && position > 0) {
+          positions['${level.name}:$stageNumber'] = position;
+        }
+      }
+
+      await _replaceCachedStagePositions(
+        initials: initials,
+        positions: positions,
+      );
+      await preferences.setString(
+        _stagePositionsSyncedAtKey,
+        DateTime.now().toIso8601String(),
+      );
+      return positions;
+    } on Object {
+      return cachedPositions;
+    }
+  }
+
+  Future<void> cacheStagePositionForEntry(
+    RankingEntry entry,
+    List<RankingEntry> entries,
+  ) async {
+    final rankedEntries = bestEntries(
+      entries
+          .where(
+            (candidate) =>
+                candidate.level == entry.level &&
+                candidate.stageNumber == entry.stageNumber,
+          )
+          .toList(),
+    );
+    var position =
+        rankedEntries.indexWhere(
+          (candidate) => samePerformance(candidate, entry),
+        ) +
+        1;
+    if (position <= 0) {
+      position =
+          rankedEntries.indexWhere(
+            (candidate) => candidate.initials == entry.initials,
+          ) +
+          1;
+    }
+
+    if (position > 0) {
+      await saveCachedStagePosition(
+        initials: entry.initials,
+        level: entry.level,
+        stageNumber: entry.stageNumber,
+        position: position,
+      );
+    }
+  }
+
+  Future<void> cacheCurrentStagePosition({
+    required GameLevel level,
+    required int? stageNumber,
+    required List<RankingEntry> entries,
+  }) async {
+    if (stageNumber == null || stageNumber < 0) {
+      return;
+    }
+
+    final initials = await loadLastInitials();
+    if (initials.isEmpty) {
+      return;
+    }
+
+    final rankedEntries = bestEntries(
+      entries
+          .where(
+            (entry) => entry.level == level && entry.stageNumber == stageNumber,
+          )
+          .toList(),
+    );
+    final position =
+        rankedEntries.indexWhere((entry) => entry.initials == initials) + 1;
+    if (position > 0) {
+      await saveCachedStagePosition(
+        initials: initials,
+        level: level,
+        stageNumber: stageNumber,
+        position: position,
+      );
+    }
+  }
+
+  Future<void> saveCachedStagePosition({
+    required String initials,
+    required GameLevel level,
+    required int stageNumber,
+    required int position,
+  }) async {
+    final sanitizedInitials = _sanitizeInitials(initials);
+    if (sanitizedInitials == null || stageNumber < 0 || position <= 0) {
+      return;
+    }
+
+    final preferences = await SharedPreferences.getInstance();
+    final rawPositions = preferences.getString(_stagePositionsKey);
+    final positions = <String, Object?>{};
+    if (rawPositions != null) {
+      try {
+        final decoded = jsonDecode(rawPositions);
+        if (decoded is Map<String, dynamic>) {
+          positions.addAll(decoded);
+        }
+      } on Object {
+        positions.clear();
+      }
+    }
+
+    positions['$sanitizedInitials:${level.name}:$stageNumber'] = position;
+    await preferences.setString(_stagePositionsKey, jsonEncode(positions));
+  }
+
+  Future<void> _replaceCachedStagePositions({
+    required String initials,
+    required Map<String, int> positions,
+  }) async {
+    final sanitizedInitials = _sanitizeInitials(initials);
+    if (sanitizedInitials == null) {
+      return;
+    }
+
+    final preferences = await SharedPreferences.getInstance();
+    final rawPositions = preferences.getString(_stagePositionsKey);
+    final nextPositions = <String, Object?>{};
+    if (rawPositions != null) {
+      try {
+        final decoded = jsonDecode(rawPositions);
+        if (decoded is Map<String, dynamic>) {
+          for (final MapEntry(:key, :value) in decoded.entries) {
+            if (!key.startsWith('$sanitizedInitials:')) {
+              nextPositions[key] = value;
+            }
+          }
+        }
+      } on Object {
+        nextPositions.clear();
+      }
+    }
+
+    for (final MapEntry(:key, :value) in positions.entries) {
+      nextPositions['$sanitizedInitials:$key'] = value;
+    }
+
+    await preferences.setString(_stagePositionsKey, jsonEncode(nextPositions));
   }
 
   Future<String> loadLastInitials() async {
@@ -332,32 +709,47 @@ class RankingStore {
     );
   }
 
-  Future<List<RankingEntry>?> _loadRemoteEntries({
+  Future<RankingEntriesResult?> _loadRemoteEntriesResult({
     GameLevel? level,
     int? stageNumber,
+    int? limit,
+    RankingEntry? aroundEntry,
   }) async {
     try {
-      final uri = _rankingUri(level: level, stageNumber: stageNumber);
+      final uri = _rankingUri(
+        level: level,
+        stageNumber: stageNumber,
+        limit: limit,
+        aroundEntry: aroundEntry,
+      );
       final response = await http.get(uri).timeout(_requestTimeout);
       if (response.statusCode != 200) {
         return null;
       }
 
-      return _entriesFromResponse(
+      return _resultFromResponse(
         response.body,
         level: level,
         stageNumber: stageNumber,
+        highlightedEntry: aroundEntry,
+        limit: limit,
       );
     } on Object {
       return null;
     }
   }
 
-  Future<List<RankingEntry>?> _saveRemoteEntry(RankingEntry entry) async {
+  Future<RankingEntriesResult?> _saveRemoteEntryResult(
+    RankingEntry entry,
+  ) async {
     try {
       final response = await http
           .post(
-            _rankingUri(stageNumber: entry.stageNumber),
+            _rankingUri(
+              stageNumber: entry.stageNumber,
+              limit: 11,
+              aroundEntry: entry,
+            ),
             headers: const <String, String>{'content-type': 'application/json'},
             body: jsonEncode(entry.toJson()),
           )
@@ -366,10 +758,11 @@ class RankingStore {
         return null;
       }
 
-      return _entriesFromResponse(
+      return _resultFromResponse(
         response.body,
         level: entry.level,
         stageNumber: entry.stageNumber > 0 ? entry.stageNumber : null,
+        highlightedEntry: entry,
       );
     } on Object {
       return null;
@@ -440,7 +833,12 @@ class RankingStore {
     return id;
   }
 
-  Uri _rankingUri({GameLevel? level, int? stageNumber}) {
+  Uri _rankingUri({
+    GameLevel? level,
+    int? stageNumber,
+    int? limit,
+    RankingEntry? aroundEntry,
+  }) {
     final baseUri = Uri.parse(_apiBaseUrl);
     final path = baseUri.path.endsWith('/ranking')
         ? baseUri.path
@@ -452,6 +850,15 @@ class RankingStore {
         if (level != null) 'level': level.name,
         if (stageNumber != null && stageNumber > 0)
           'stage': stageNumber.toString(),
+        if (limit != null && limit > 0) 'limit': limit.toString(),
+        if (aroundEntry != null) ...{
+          'aroundInitials': aroundEntry.initials,
+          'aroundWords': aroundEntry.words.toString(),
+          'aroundElapsed': aroundEntry.elapsedSeconds.toString(),
+          'aroundErrors': aroundEntry.errors.toString(),
+          'aroundHints': aroundEntry.hintsUsed.toString(),
+          'aroundSkips': aroundEntry.skipsUsed.toString(),
+        },
       },
     );
   }
@@ -462,10 +869,21 @@ class RankingStore {
     return baseUri.replace(path: path);
   }
 
-  List<RankingEntry>? _entriesFromResponse(
+  Uri _positionsUri({required String initials}) {
+    final baseUri = Uri.parse(_apiBaseUrl);
+    final path = '${baseUri.path.replaceFirst(RegExp(r'/$'), '')}/positions';
+    return baseUri.replace(
+      path: path,
+      queryParameters: <String, String>{'initials': initials},
+    );
+  }
+
+  RankingEntriesResult? _resultFromResponse(
     String body, {
     GameLevel? level,
     int? stageNumber,
+    RankingEntry? highlightedEntry,
+    int? limit,
   }) {
     try {
       final decoded = jsonDecode(body);
@@ -487,10 +905,163 @@ class RankingStore {
           )
           .toList();
       _sortEntries(entries);
-      return entries;
+      if (decoded is Map<String, dynamic>) {
+        final startPosition =
+            _positiveIntFromJson(decoded['startPosition']) ??
+            (entries.isEmpty ? 0 : 1);
+        final totalEntries =
+            _positiveIntFromJson(decoded['totalEntries']) ?? entries.length;
+        final highlightedPosition = _positiveIntFromJson(
+          decoded['highlightedPosition'],
+        );
+
+        return RankingEntriesResult(
+          entries: entries,
+          startPosition: startPosition,
+          totalEntries: totalEntries,
+          highlightedPosition: highlightedPosition,
+        );
+      }
+
+      return RankingEntriesResult.fromFullEntries(
+        entries,
+        highlightedEntry: highlightedEntry,
+        limit: limit,
+      );
     } on Object {
       return null;
     }
+  }
+
+  int? _positiveIntFromJson(Object? value) {
+    final parsed = switch (value) {
+      final int number => number,
+      final String text => int.tryParse(text) ?? 0,
+      _ => 0,
+    };
+    return parsed > 0 ? parsed : null;
+  }
+
+  Future<RankingEntriesResult?> _loadCachedEntriesResult({
+    GameLevel? level,
+    int? stageNumber,
+    int? limit,
+    RankingEntry? aroundEntry,
+  }) async {
+    final preferences = await SharedPreferences.getInstance();
+    final cache = _entriesCacheFromJson(
+      preferences.getString(_entriesCacheKey),
+    );
+    final rawEntry =
+        cache[_entriesCacheLookupKey(
+          level: level,
+          stageNumber: stageNumber,
+          limit: limit,
+          aroundEntry: aroundEntry,
+        )];
+    if (rawEntry is! Map<String, dynamic>) {
+      return null;
+    }
+
+    final cachedAt = DateTime.tryParse(rawEntry['cachedAt'] as String? ?? '');
+    if (cachedAt == null ||
+        DateTime.now().difference(cachedAt) > entriesCacheTtl) {
+      return null;
+    }
+
+    final rawEntries = rawEntry['entries'];
+    if (rawEntries is! List) {
+      return null;
+    }
+
+    final entries = rawEntries
+        .whereType<Map<String, dynamic>>()
+        .map(RankingEntry.fromJson)
+        .where((entry) => level == null || entry.level == level)
+        .where(
+          (entry) => stageNumber == null || entry.stageNumber == stageNumber,
+        )
+        .toList();
+    _sortEntries(entries);
+
+    return RankingEntriesResult(
+      entries: entries,
+      startPosition:
+          _positiveIntFromJson(rawEntry['startPosition']) ??
+          (entries.isEmpty ? 0 : 1),
+      totalEntries:
+          _positiveIntFromJson(rawEntry['totalEntries']) ?? entries.length,
+      highlightedPosition: _positiveIntFromJson(
+        rawEntry['highlightedPosition'],
+      ),
+    );
+  }
+
+  Future<void> _saveCachedEntriesResult(
+    RankingEntriesResult result, {
+    GameLevel? level,
+    int? stageNumber,
+    int? limit,
+    RankingEntry? aroundEntry,
+  }) async {
+    final preferences = await SharedPreferences.getInstance();
+    final cache = _entriesCacheFromJson(
+      preferences.getString(_entriesCacheKey),
+    );
+    cache[_entriesCacheLookupKey(
+      level: level,
+      stageNumber: stageNumber,
+      limit: limit,
+      aroundEntry: aroundEntry,
+    )] = <String, Object?>{
+      'cachedAt': DateTime.now().toIso8601String(),
+      'entries': result.entries.map((entry) => entry.toJson()).toList(),
+      'startPosition': result.startPosition,
+      'totalEntries': result.totalEntries,
+      if (result.highlightedPosition != null)
+        'highlightedPosition': result.highlightedPosition,
+    };
+    await preferences.setString(_entriesCacheKey, jsonEncode(cache));
+  }
+
+  Map<String, Object?> _entriesCacheFromJson(String? rawValue) {
+    if (rawValue == null) {
+      return <String, Object?>{};
+    }
+
+    try {
+      final decoded = jsonDecode(rawValue);
+      if (decoded is Map<String, dynamic>) {
+        return <String, Object?>{...decoded};
+      }
+    } on Object {
+      return <String, Object?>{};
+    }
+    return <String, Object?>{};
+  }
+
+  String _entriesCacheLookupKey({
+    GameLevel? level,
+    int? stageNumber,
+    int? limit,
+    RankingEntry? aroundEntry,
+  }) {
+    return [
+      level?.name ?? 'all',
+      stageNumber ?? 0,
+      limit ?? 0,
+      if (aroundEntry == null)
+        'top'
+      else
+        [
+          aroundEntry.initials,
+          aroundEntry.words,
+          aroundEntry.elapsedSeconds,
+          aroundEntry.errors,
+          aroundEntry.hintsUsed,
+          aroundEntry.skipsUsed,
+        ].join('-'),
+    ].join(':');
   }
 
   static List<RankingEntry> bestEntries(List<RankingEntry> entries) {
@@ -530,6 +1101,45 @@ class RankingStore {
     return merged;
   }
 
+  static RankingEntriesResult _mergeResult(
+    RankingEntriesResult primaryResult,
+    List<RankingEntry> fallbackEntries,
+    RankingEntry? highlightedEntry,
+  ) {
+    final mergedEntries = _mergedEntries(
+      primaryResult.entries,
+      fallbackEntries,
+    );
+    final totalEntries = max(primaryResult.totalEntries, mergedEntries.length);
+    if (highlightedEntry == null) {
+      return RankingEntriesResult(
+        entries: mergedEntries,
+        startPosition: primaryResult.startPosition,
+        totalEntries: totalEntries,
+        highlightedPosition: primaryResult.highlightedPosition,
+      );
+    }
+
+    final highlightedInWindow =
+        primaryResult.highlightedPosition != null &&
+        primaryResult.entries.any(
+          (entry) => samePerformance(entry, highlightedEntry),
+        );
+    if (highlightedInWindow) {
+      return RankingEntriesResult(
+        entries: mergedEntries,
+        startPosition: primaryResult.startPosition,
+        totalEntries: totalEntries,
+        highlightedPosition: primaryResult.highlightedPosition,
+      );
+    }
+
+    return RankingEntriesResult.fromFullEntries(
+      mergedEntries,
+      highlightedEntry: highlightedEntry,
+    );
+  }
+
   static List<RankingEntry> _dedupeEntries(List<RankingEntry> entries) {
     final seen = <String>{};
     final deduped = <RankingEntry>[];
@@ -563,6 +1173,17 @@ class RankingStore {
       entry.hintsUsed,
       entry.skipsUsed,
     ].join(':');
+  }
+
+  static bool samePerformance(RankingEntry a, RankingEntry b) {
+    return a.initials == b.initials &&
+        a.level == b.level &&
+        a.stageNumber == b.stageNumber &&
+        a.words == b.words &&
+        a.elapsedSeconds == b.elapsedSeconds &&
+        a.errors == b.errors &&
+        a.hintsUsed == b.hintsUsed &&
+        a.skipsUsed == b.skipsUsed;
   }
 
   static void _sortEntries(List<RankingEntry> entries) {
@@ -614,6 +1235,6 @@ class RankingStore {
 
   static String? _sanitizeInitials(String? initials) {
     final normalized = initials?.trim().toUpperCase() ?? '';
-    return RegExp(r'^[A-Z]{3,5}$').hasMatch(normalized) ? normalized : null;
+    return RegExp(r'^[A-Z0-9]{3,6}$').hasMatch(normalized) ? normalized : null;
   }
 }

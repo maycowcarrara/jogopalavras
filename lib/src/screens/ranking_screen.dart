@@ -15,6 +15,8 @@ class RankingScreen extends StatelessWidget {
     this.initialLevel,
     this.initialStageNumber,
     this.highlightEntry,
+    this.initialEntries,
+    this.initialResult,
     this.continueLevel,
     this.completedLevel,
     this.completedGame = false,
@@ -23,6 +25,8 @@ class RankingScreen extends StatelessWidget {
   final GameLevel? initialLevel;
   final int? initialStageNumber;
   final RankingEntry? highlightEntry;
+  final List<RankingEntry>? initialEntries;
+  final RankingEntriesResult? initialResult;
   final GameLevel? continueLevel;
   final GameLevel? completedLevel;
   final bool completedGame;
@@ -43,7 +47,7 @@ class RankingScreen extends StatelessWidget {
             'Ranking',
             style: TextStyle(fontWeight: FontWeight.w900),
           ),
-          actions: const [AppOptionsControl()],
+          actions: const [_RankingOptionsAction()],
         ),
         bottomNavigationBar: const AdBannerSlot(
           adSize: AdSize.largeBanner,
@@ -59,6 +63,8 @@ class RankingScreen extends StatelessWidget {
               level: selectedLevel,
               stageNumber: highlightEntry?.stageNumber ?? initialStageNumber,
               highlightEntry: highlightEntry,
+              initialEntries: initialEntries,
+              initialResult: initialResult,
               continueLevel: continueLevel,
               completedLevel: completedLevel,
               completedGame: completedGame,
@@ -77,7 +83,7 @@ class RankingScreen extends StatelessWidget {
             'Ranking',
             style: TextStyle(fontWeight: FontWeight.w900),
           ),
-          actions: const [AppOptionsControl()],
+          actions: const [_RankingOptionsAction()],
           bottom: TabBar(
             labelColor: AppTheme.midnight,
             indicatorColor: AppTheme.pressRed,
@@ -107,6 +113,12 @@ class RankingScreen extends StatelessWidget {
                     highlightEntry: highlightEntry?.level == level
                         ? highlightEntry
                         : null,
+                    initialEntries: highlightEntry?.level == level
+                        ? initialEntries
+                        : null,
+                    initialResult: highlightEntry?.level == level
+                        ? initialResult
+                        : null,
                     continueLevel: highlightEntry?.level == level
                         ? continueLevel
                         : null,
@@ -125,11 +137,25 @@ class RankingScreen extends StatelessWidget {
   }
 }
 
+class _RankingOptionsAction extends StatelessWidget {
+  const _RankingOptionsAction();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Padding(
+      padding: EdgeInsets.only(right: 12),
+      child: Center(child: AppOptionsControl()),
+    );
+  }
+}
+
 class _RankingLevelView extends StatefulWidget {
   const _RankingLevelView({
     required this.level,
     this.stageNumber,
     this.highlightEntry,
+    this.initialEntries,
+    this.initialResult,
     this.continueLevel,
     this.completedLevel,
     this.completedGame = false,
@@ -138,6 +164,8 @@ class _RankingLevelView extends StatefulWidget {
   final GameLevel level;
   final int? stageNumber;
   final RankingEntry? highlightEntry;
+  final List<RankingEntry>? initialEntries;
+  final RankingEntriesResult? initialResult;
   final GameLevel? continueLevel;
   final GameLevel? completedLevel;
   final bool completedGame;
@@ -147,23 +175,56 @@ class _RankingLevelView extends StatefulWidget {
 }
 
 class _RankingLevelViewState extends State<_RankingLevelView> {
-  late Future<List<RankingEntry>> _entriesFuture;
+  static const _manualTopLimit = 50;
+
+  late Future<RankingEntriesResult> _entriesFuture;
+
+  int? get _effectiveStageNumber {
+    if (widget.level == GameLevel.pautaLivre) {
+      return widget.stageNumber;
+    }
+    return widget.highlightEntry?.stageNumber ?? widget.stageNumber ?? 1;
+  }
 
   @override
   void initState() {
     super.initState();
-    _entriesFuture = _loadEntries();
+    final initialResult = widget.initialResult;
+    if (initialResult != null) {
+      _entriesFuture = Future<RankingEntriesResult>.value(initialResult);
+      return;
+    }
+
+    final initialEntries = widget.initialEntries;
+    _entriesFuture = initialEntries == null
+        ? _loadEntries()
+        : Future<RankingEntriesResult>.value(
+            RankingEntriesResult.fromFullEntries(
+              initialEntries,
+              highlightedEntry: widget.highlightEntry,
+              limit: widget.highlightEntry == null ? _manualTopLimit : null,
+            ),
+          );
   }
 
-  Future<List<RankingEntry>> _loadEntries() {
-    return RankingStore.instance.loadEntries(
+  Future<RankingEntriesResult> _loadEntries({bool forceRefresh = false}) async {
+    final result = await RankingStore.instance.loadEntriesResult(
       level: widget.level,
-      stageNumber: widget.stageNumber,
+      stageNumber: _effectiveStageNumber,
+      limit: widget.highlightEntry == null ? _manualTopLimit : 11,
+      aroundEntry: widget.highlightEntry,
+      forceRefresh: forceRefresh,
     );
+    await RankingStore.instance.cacheCurrentStagePosition(
+      level: widget.level,
+      stageNumber: _effectiveStageNumber,
+      entries: result.entries,
+    );
+    return result;
   }
 
   Future<void> _refreshEntries() async {
-    final nextEntries = _loadEntries();
+    final nextEntries = _loadEntries(forceRefresh: true);
     setState(() {
       _entriesFuture = nextEntries;
     });
@@ -172,17 +233,43 @@ class _RankingLevelViewState extends State<_RankingLevelView> {
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<List<RankingEntry>>(
+    return FutureBuilder<RankingEntriesResult>(
       future: _entriesFuture,
       builder: (context, snapshot) {
-        final entries = snapshot.data ?? <RankingEntry>[];
+        final result =
+            snapshot.data ??
+            const RankingEntriesResult(
+              entries: <RankingEntry>[],
+              startPosition: 0,
+              totalEntries: 0,
+            );
+        final entries = result.entries;
         final isLoading = snapshot.connectionState != ConnectionState.done;
+        final highlightIndex = widget.highlightEntry == null || isLoading
+            ? -1
+            : entries.indexWhere(
+                (entry) => _sameRankingEntry(entry, widget.highlightEntry!),
+              );
         final highlightPosition = widget.highlightEntry == null || isLoading
             ? 0
-            : entries.indexWhere(
-                    (entry) => _sameRankingEntry(entry, widget.highlightEntry!),
-                  ) +
-                  1;
+            : result.highlightedPosition ??
+                  (highlightIndex < 0
+                      ? 0
+                      : result.startPosition + highlightIndex);
+        final window = _RankingWindow.fromResult(
+          result,
+          highlightPosition: highlightPosition,
+        );
+        final highlightedEntry = widget.highlightEntry;
+        final contextEntries = [
+          for (var index = 0; index < window.entries.length; index++)
+            if (highlightedEntry == null ||
+                !_sameRankingEntry(window.entries[index], highlightedEntry))
+              _PositionedRankingEntry(
+                position: window.startPosition + index,
+                entry: window.entries[index],
+              ),
+        ];
 
         return RefreshIndicator(
           onRefresh: _refreshEntries,
@@ -193,7 +280,7 @@ class _RankingLevelViewState extends State<_RankingLevelView> {
               RevealOnMount(
                 child: _RankingHeader(
                   level: widget.level,
-                  stageNumber: widget.stageNumber,
+                  stageNumber: _effectiveStageNumber,
                   highlightEntry: widget.highlightEntry,
                   highlightPosition: highlightPosition,
                   continueLevel: widget.continueLevel,
@@ -207,28 +294,120 @@ class _RankingLevelViewState extends State<_RankingLevelView> {
                 const Center(child: CircularProgressIndicator())
               else if (entries.isEmpty)
                 const _EmptyRanking()
-              else
-                for (var index = 0; index < entries.length; index++) ...[
+              else ...[
+                if (widget.highlightEntry != null && highlightPosition > 0) ...[
+                  _HighlightedRankingResult(
+                    position: highlightPosition,
+                    entry: widget.highlightEntry!,
+                    accent: widget.level.accent,
+                  ),
+                  if (contextEntries.isNotEmpty) const SizedBox(height: 18),
+                ],
+                if (contextEntries.isNotEmpty && window.isTrimmed) ...[
+                  _RankingWindowLabel(window: window),
+                  const SizedBox(height: 9),
+                ],
+                for (var index = 0; index < contextEntries.length; index++) ...[
                   RevealOnMount(
                     delay: Duration(milliseconds: 70 + (index * 35)),
                     child: _RankingCard(
-                      position: index + 1,
-                      entry: entries[index],
+                      position: contextEntries[index].position,
+                      entry: contextEntries[index].entry,
                       accent: widget.level.accent,
-                      isHighlighted:
-                          widget.highlightEntry != null &&
-                          _sameRankingEntry(
-                            entries[index],
-                            widget.highlightEntry!,
-                          ),
                     ),
                   ),
                   const SizedBox(height: 10),
                 ],
+              ],
             ],
           ),
         );
       },
+    );
+  }
+}
+
+class _PositionedRankingEntry {
+  const _PositionedRankingEntry({required this.position, required this.entry});
+
+  final int position;
+  final RankingEntry entry;
+}
+
+class _RankingWindow {
+  const _RankingWindow({
+    required this.entries,
+    required this.startPosition,
+    required this.totalEntries,
+  });
+
+  static const _neighbors = 5;
+
+  final List<RankingEntry> entries;
+  final int startPosition;
+  final int totalEntries;
+
+  bool get isTrimmed => entries.length < totalEntries;
+  int get endPosition => startPosition + entries.length - 1;
+
+  factory _RankingWindow.fromEntries(
+    List<RankingEntry> entries, {
+    required int highlightPosition,
+  }) {
+    if (highlightPosition <= 0) {
+      return _RankingWindow(
+        entries: entries,
+        startPosition: entries.isEmpty ? 0 : 1,
+        totalEntries: entries.length,
+      );
+    }
+
+    final highlightIndex = highlightPosition - 1;
+    final start = (highlightIndex - _neighbors).clamp(0, entries.length);
+    final end = (highlightIndex + _neighbors + 1).clamp(0, entries.length);
+
+    return _RankingWindow(
+      entries: entries.sublist(start, end),
+      startPosition: start + 1,
+      totalEntries: entries.length,
+    );
+  }
+
+  factory _RankingWindow.fromResult(
+    RankingEntriesResult result, {
+    required int highlightPosition,
+  }) {
+    if (result.isPartial) {
+      return _RankingWindow(
+        entries: result.entries,
+        startPosition: result.startPosition,
+        totalEntries: result.totalEntries,
+      );
+    }
+
+    return _RankingWindow.fromEntries(
+      result.entries,
+      highlightPosition: highlightPosition,
+    );
+  }
+}
+
+class _RankingWindowLabel extends StatelessWidget {
+  const _RankingWindowLabel({required this.window});
+
+  final _RankingWindow window;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      'Mostrando #${window.startPosition} a #${window.endPosition} de ${window.totalEntries}',
+      style: TextStyle(
+        color: AppTheme.ink.withValues(alpha: 0.66),
+        fontSize: 12,
+        fontWeight: FontWeight.w800,
+        height: 1,
+        letterSpacing: 0,
+      ),
     );
   }
 }
@@ -492,6 +671,54 @@ class _CompletionBanner extends StatelessWidget {
   }
 }
 
+class _HighlightedRankingResult extends StatelessWidget {
+  const _HighlightedRankingResult({
+    required this.position,
+    required this.entry,
+    required this.accent,
+  });
+
+  final int position;
+  final RankingEntry entry;
+  final Color accent;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      container: true,
+      label: 'Seu resultado no ranking',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.my_location_rounded, color: accent, size: 18),
+              const SizedBox(width: 7),
+              Text(
+                'Seu resultado',
+                style: TextStyle(
+                  color: AppTheme.midnight,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w900,
+                  height: 1,
+                  letterSpacing: 0,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 9),
+          _RankingCard(
+            position: position,
+            entry: entry,
+            accent: accent,
+            isHighlighted: true,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _RankingCard extends StatelessWidget {
   const _RankingCard({
     required this.position,
@@ -507,6 +734,12 @@ class _RankingCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final positionFontSize = position >= 1000
+        ? 11.0
+        : position >= 100
+        ? 12.0
+        : 14.0;
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -543,7 +776,10 @@ class _RankingCard extends StatelessWidget {
               '$position',
               style: TextStyle(
                 color: position <= 3 ? Colors.white : AppTheme.ink,
+                fontSize: positionFontSize,
                 fontWeight: FontWeight.w900,
+                height: 1,
+                letterSpacing: 0,
               ),
             ),
           ),
@@ -669,7 +905,7 @@ class _EmptyRanking extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           Text(
-            'Complete esta fase e registre de 3 a 5 letras para aparecer aqui.',
+            'Complete esta fase e registre de 3 a 6 letras ou números para aparecer aqui.',
             textAlign: TextAlign.center,
             style: TextStyle(
               color: AppTheme.ink.withValues(alpha: 0.72),

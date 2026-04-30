@@ -236,6 +236,11 @@ class _IntroScreenState extends State<IntroScreen>
                       const SizedBox(height: 20),
                       RevealOnMount(
                         delay: const Duration(milliseconds: 240),
+                        child: const _AdsNotice(),
+                      ),
+                      const SizedBox(height: 16),
+                      RevealOnMount(
+                        delay: const Duration(milliseconds: 320),
                         beginOffset: const Offset(0, 0.06),
                         child: _PlayButton(
                           onPressed: () => _openLevelScreen(context),
@@ -266,6 +271,40 @@ class _IntroScreenState extends State<IntroScreen>
         );
       }
     }
+  }
+}
+
+class _AdsNotice extends StatelessWidget {
+  const _AdsNotice();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 12),
+      decoration: BoxDecoration(
+        color: AppTheme.pressGold.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppTheme.pressGold.withValues(alpha: 0.34)),
+      ),
+      child: const Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.campaign_rounded, color: AppTheme.pressGold, size: 20),
+          SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'O jogo pode exibir anúncios em pausas naturais para manter a experiência gratuita.',
+              style: TextStyle(
+                color: AppTheme.ink,
+                fontSize: 12.5,
+                fontWeight: FontWeight.w800,
+                height: 1.25,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 

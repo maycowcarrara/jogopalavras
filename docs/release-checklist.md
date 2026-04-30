@@ -7,10 +7,9 @@ Use este checklist antes de enviar o primeiro `.aab` para a Play Console.
 - [ ] Confirmar `version` e `build number` em `pubspec.yaml`.
 - [ ] Confirmar `applicationId` definitivo em `android/app/build.gradle.kts`.
 - [ ] Configurar `android/key.properties` com keystore de upload.
-- [ ] Trocar `admob_app_id` em `android/app/src/main/res/values/strings.xml`.
-- [ ] Definir `ADMOB_ANDROID_BANNER_ID` real, se banner for publicado.
-- [ ] Definir `ADMOB_ANDROID_INTERSTITIAL_ID` real, se interstitial for
-      publicado.
+- [ ] Confirmar `ADMOB_ANDROID_APP_ID` real em `android/gradle.properties`.
+- [ ] Confirmar `ADMOB_ANDROID_BANNER_ID` real em `package.json`.
+- [ ] Confirmar `ADMOB_ANDROID_INTERSTITIAL_ID` real em `package.json`.
 - [ ] Rodar `flutter analyze --no-pub`.
 - [ ] Rodar `flutter test`.
 - [ ] Gerar `.aab` de release.

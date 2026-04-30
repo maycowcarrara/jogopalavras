@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:jogopalavras/src/game/campaign_progress_store.dart';
 import 'package:jogopalavras/src/game/game_level.dart';
+import 'package:jogopalavras/src/game/ranking_store.dart';
 import 'package:jogopalavras/src/game/word_bank.dart';
 import 'package:jogopalavras/src/game/word_progress_store.dart';
 import 'package:jogopalavras/src/navigation/app_page_route.dart';
@@ -66,10 +67,57 @@ class _LevelScreenState extends State<LevelScreen> with RouteAware {
       )).length;
     }
 
-    return _CampaignSnapshot(
+    final rankingPositions = await _loadRankingPositions(
       progress: progress,
       usedWordCounts: usedWordCounts,
     );
+
+    return _CampaignSnapshot(
+      progress: progress,
+      usedWordCounts: usedWordCounts,
+      rankingPositions: rankingPositions,
+    );
+  }
+
+  Future<Map<String, int>> _loadRankingPositions({
+    required CampaignProgress progress,
+    required Map<GameLevel, int> usedWordCounts,
+  }) async {
+    final cachedPositions = await RankingStore.instance
+        .syncCachedStagePositions();
+    if (cachedPositions.isEmpty) {
+      return const <String, int>{};
+    }
+    final positions = <String, int>{};
+    final snapshot = _CampaignSnapshot(
+      progress: progress,
+      usedWordCounts: usedWordCounts,
+    );
+    final freePlayPosition =
+        cachedPositions[_subStageKey(GameLevel.pautaLivre, 0)];
+    if (freePlayPosition != null) {
+      positions[_subStageKey(GameLevel.pautaLivre, 0)] = freePlayPosition;
+    }
+
+    for (final level in const [
+      GameLevel.easy,
+      GameLevel.medium,
+      GameLevel.hard,
+    ]) {
+      final completedStages = snapshot.completedSubStagesFor(level);
+      if (completedStages == 0) {
+        continue;
+      }
+
+      for (var stageNumber = 1; stageNumber <= completedStages; stageNumber++) {
+        final position = cachedPositions[_subStageKey(level, stageNumber)];
+        if (position != null) {
+          positions[_subStageKey(level, stageNumber)] = position;
+        }
+      }
+    }
+
+    return positions;
   }
 
   @override
@@ -223,7 +271,13 @@ class _LevelScreenState extends State<LevelScreen> with RouteAware {
                             onTap: () => _openNextObjective(campaign),
                           ),
                           const SizedBox(height: 10),
-                          _FreePlayDock(onProgressChanged: _refreshProgress),
+                          _FreePlayDock(
+                            rankingPosition: campaign.rankingPositionFor(
+                              GameLevel.pautaLivre,
+                              0,
+                            ),
+                            onProgressChanged: _refreshProgress,
+                          ),
                         ],
                       ),
                     ),
@@ -349,17 +403,28 @@ class _NextObjectiveBanner extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text(
-                      title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w900,
-                        height: 1,
-                        letterSpacing: 0,
-                      ),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w900,
+                              height: 1,
+                              letterSpacing: 0,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        _ProgressBadge(
+                          label: '${campaign.totalPercent}%',
+                          color: accent,
+                        ),
+                      ],
                     ),
                     const SizedBox(height: 5),
                     Text(
@@ -376,8 +441,6 @@ class _NextObjectiveBanner extends StatelessWidget {
                   ],
                 ),
               ),
-              const SizedBox(width: 8),
-              _ProgressBadge(label: '${campaign.totalPercent}%', color: accent),
             ],
           ),
         ),
@@ -636,6 +699,8 @@ class _LevelChapter extends StatelessWidget {
                 completed: completed,
                 accent: accent,
                 itemLabel: _subStageLabel(level),
+                rankingPositionForStage: (stageNumber) =>
+                    campaign.rankingPositionFor(level, stageNumber),
                 keyForStage: (stageNumber) =>
                     subStageKeyFor(level, stageNumber),
                 onSubStageTap: (stageNumber) =>
@@ -903,6 +968,7 @@ class _SubStageTrail extends StatelessWidget {
     required this.completed,
     required this.accent,
     required this.itemLabel,
+    required this.rankingPositionForStage,
     required this.keyForStage,
     required this.onSubStageTap,
   });
@@ -914,6 +980,7 @@ class _SubStageTrail extends StatelessWidget {
   final bool completed;
   final Color accent;
   final String itemLabel;
+  final int? Function(int stageNumber) rankingPositionForStage;
   final GlobalKey Function(int stageNumber) keyForStage;
   final ValueChanged<int> onSubStageTap;
 
@@ -987,6 +1054,7 @@ class _SubStageTrail extends StatelessWidget {
         current: isCurrent,
         locked: isLocked,
         hasRanking: isCompleted,
+        rankingPosition: isCompleted ? rankingPositionForStage(number) : null,
         color: accent,
         labelSide: labelSide,
         onTap: !isLocked ? () => onSubStageTap(number) : null,
@@ -1024,7 +1092,7 @@ class _OffsetPressAnimationState extends State<_OffsetPressAnimation>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller = AnimationController(
     vsync: this,
-    duration: const Duration(seconds: 18),
+    duration: const Duration(seconds: 9),
   );
 
   @override
@@ -1341,6 +1409,7 @@ class _SubStageDot extends StatelessWidget {
     required this.current,
     required this.locked,
     required this.hasRanking,
+    required this.rankingPosition,
     required this.color,
     required this.labelSide,
     required this.onTap,
@@ -1352,6 +1421,7 @@ class _SubStageDot extends StatelessWidget {
   final bool current;
   final bool locked;
   final bool hasRanking;
+  final int? rankingPosition;
   final Color color;
   final _SubStageLabelSide labelSide;
   final VoidCallback? onTap;
@@ -1453,16 +1523,68 @@ class _SubStageDot extends StatelessWidget {
                   ),
                 ),
                 if (completed)
-                  const Icon(
-                    Icons.check_circle_rounded,
-                    color: Colors.white,
-                    size: 18,
-                  ),
+                  rankingPosition == null
+                      ? const Icon(
+                          Icons.check_circle_rounded,
+                          color: Colors.white,
+                          size: 18,
+                        )
+                      : _StageRankingBadge(position: rankingPosition!),
                 if (hasRanking && !completed)
                   Icon(Icons.leaderboard_rounded, color: foreground, size: 16),
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _StageRankingBadge extends StatelessWidget {
+  const _StageRankingBadge({required this.position});
+
+  final int position;
+
+  @override
+  Widget build(BuildContext context) {
+    final label = position > 99 ? '99+' : '$position';
+
+    return Tooltip(
+      message: 'Sua última posição conhecida: #$position',
+      child: SizedBox(
+        width: 30,
+        height: 28,
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            Icon(
+              Icons.emoji_events_rounded,
+              color: AppTheme.pressGold,
+              size: 28,
+              shadows: [
+                Shadow(
+                  color: AppTheme.midnight.withValues(alpha: 0.18),
+                  blurRadius: 2,
+                  offset: const Offset(0, 1),
+                ),
+              ],
+            ),
+            Padding(
+              padding: const EdgeInsets.only(bottom: 5),
+              child: Text(
+                label,
+                maxLines: 1,
+                style: TextStyle(
+                  color: position <= 3 ? Colors.white : AppTheme.midnight,
+                  fontSize: position > 99 ? 7.2 : 8.4,
+                  fontWeight: FontWeight.w900,
+                  height: 1,
+                  letterSpacing: 0,
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -1856,8 +1978,12 @@ class _PublishedStamp extends StatelessWidget {
 }
 
 class _FreePlayDock extends StatelessWidget {
-  const _FreePlayDock({required this.onProgressChanged});
+  const _FreePlayDock({
+    required this.rankingPosition,
+    required this.onProgressChanged,
+  });
 
+  final int? rankingPosition;
   final VoidCallback onProgressChanged;
 
   Future<void> _openFreePlay(BuildContext context) async {
@@ -1887,124 +2013,157 @@ class _FreePlayDock extends StatelessWidget {
       borderRadius: BorderRadius.circular(8),
       elevation: 6,
       shadowColor: AppTheme.midnight.withValues(alpha: 0.24),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-        child: Row(
-          children: [
-            Expanded(
-              child: InkWell(
-                key: const ValueKey<String>('stage_pautaLivre'),
-                borderRadius: BorderRadius.circular(8),
-                onTap: () => _openFreePlay(context),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 44,
-                      height: 44,
-                      decoration: BoxDecoration(
-                        color: AppTheme.pressGold,
-                        borderRadius: BorderRadius.circular(8),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final stacked = constraints.maxWidth < 360;
+
+          return Padding(
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+            child: stacked
+                ? Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _buildPlayTarget(context),
+                      const SizedBox(height: 8),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: _buildActions(context),
                       ),
-                      child: const Icon(
-                        Icons.dynamic_feed_rounded,
-                        color: Colors.white,
-                        size: 21,
-                      ),
-                    ),
-                    const SizedBox(width: 11),
-                    const Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            'Pauta Livre',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: AppTheme.midnight,
-                              fontWeight: FontWeight.w900,
-                              fontSize: 17,
-                              height: 1,
-                            ),
-                          ),
-                          SizedBox(height: 4),
-                          Text(
-                            'Plantão sempre aberto com todos os cadernos',
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: AppTheme.ink,
-                              fontWeight: FontWeight.w700,
-                              fontSize: 12,
-                              height: 1.08,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
+                    ],
+                  )
+                : Row(
+                    children: [
+                      Expanded(child: _buildPlayTarget(context)),
+                      const SizedBox(width: 8),
+                      _buildActions(context),
+                    ],
+                  ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildPlayTarget(BuildContext context) {
+    return InkWell(
+      key: const ValueKey<String>('stage_pautaLivre'),
+      borderRadius: BorderRadius.circular(8),
+      onTap: () => _openFreePlay(context),
+      child: Row(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: AppTheme.pressGold,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Icon(
+              Icons.dynamic_feed_rounded,
+              color: Colors.white,
+              size: 21,
+            ),
+          ),
+          const SizedBox(width: 11),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Pauta Livre',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: AppTheme.midnight,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 17,
+                    height: 1,
+                  ),
+                ),
+                SizedBox(height: 4),
+                Text(
+                  'Plantão sempre aberto com todos os cadernos',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: AppTheme.ink,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 12,
+                    height: 1.08,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (rankingPosition != null) ...[
+            const SizedBox(width: 8),
+            _StageRankingBadge(position: rankingPosition!),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildActions(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Tooltip(
+          message: 'Ranking do Plantão',
+          child: Material(
+            color: AppTheme.pressGold.withValues(alpha: 0.14),
+            borderRadius: BorderRadius.circular(999),
+            child: InkWell(
+              key: const ValueKey<String>('ranking_pautaLivre'),
+              borderRadius: BorderRadius.circular(999),
+              onTap: () => _openFreePlayRanking(context),
+              child: Container(
+                width: 42,
+                height: 42,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(
+                    color: AppTheme.pressGold.withValues(alpha: 0.34),
+                  ),
+                ),
+                child: const Icon(
+                  Icons.leaderboard_rounded,
+                  color: AppTheme.pressGold,
+                  size: 19,
                 ),
               ),
             ),
-            const SizedBox(width: 8),
-            Tooltip(
-              message: 'Ranking do Plantão',
-              child: Material(
+          ),
+        ),
+        const SizedBox(width: 8),
+        Material(
+          color: AppTheme.pressGold.withValues(alpha: 0.14),
+          borderRadius: BorderRadius.circular(999),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(999),
+            onTap: () => _openFreePlay(context),
+            child: Container(
+              width: 42,
+              height: 42,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
                 color: AppTheme.pressGold.withValues(alpha: 0.14),
                 borderRadius: BorderRadius.circular(999),
-                child: InkWell(
-                  key: const ValueKey<String>('ranking_pautaLivre'),
-                  borderRadius: BorderRadius.circular(999),
-                  onTap: () => _openFreePlayRanking(context),
-                  child: Container(
-                    width: 42,
-                    height: 42,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(999),
-                      border: Border.all(
-                        color: AppTheme.pressGold.withValues(alpha: 0.34),
-                      ),
-                    ),
-                    child: const Icon(
-                      Icons.leaderboard_rounded,
-                      color: AppTheme.pressGold,
-                      size: 19,
-                    ),
-                  ),
+                border: Border.all(
+                  color: AppTheme.pressGold.withValues(alpha: 0.34),
                 ),
               ),
-            ),
-            const SizedBox(width: 8),
-            Material(
-              color: AppTheme.pressGold.withValues(alpha: 0.14),
-              borderRadius: BorderRadius.circular(999),
-              child: InkWell(
-                borderRadius: BorderRadius.circular(999),
-                onTap: () => _openFreePlay(context),
-                child: Container(
-                  width: 42,
-                  height: 42,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: AppTheme.pressGold.withValues(alpha: 0.14),
-                    borderRadius: BorderRadius.circular(999),
-                    border: Border.all(
-                      color: AppTheme.pressGold.withValues(alpha: 0.34),
-                    ),
-                  ),
-                  child: const Icon(
-                    Icons.arrow_forward_rounded,
-                    color: AppTheme.pressGold,
-                    size: 19,
-                  ),
-                ),
+              child: const Icon(
+                Icons.arrow_forward_rounded,
+                color: AppTheme.pressGold,
+                size: 19,
               ),
             ),
-          ],
+          ),
         ),
-      ),
+      ],
     );
   }
 }
@@ -2093,17 +2252,20 @@ class _CampaignSnapshot {
   const _CampaignSnapshot({
     required this.progress,
     required this.usedWordCounts,
+    this.rankingPositions = const <String, int>{},
   });
 
   factory _CampaignSnapshot.empty() {
     return const _CampaignSnapshot(
       progress: CampaignProgress(<GameLevel>{}),
       usedWordCounts: <GameLevel, int>{},
+      rankingPositions: <String, int>{},
     );
   }
 
   final CampaignProgress progress;
   final Map<GameLevel, int> usedWordCounts;
+  final Map<String, int> rankingPositions;
 
   bool get completedGame => progress.isCompleted(GameLevel.hard);
 
@@ -2169,6 +2331,10 @@ class _CampaignSnapshot {
     }
 
     return math.min(completedSubStagesFor(level) + 1, total);
+  }
+
+  int? rankingPositionFor(GameLevel level, int stageNumber) {
+    return rankingPositions[_subStageKey(level, stageNumber)];
   }
 
   int remainingWordsFor(GameLevel level) {

@@ -102,7 +102,7 @@ class _InitialsDialogState extends State<_InitialsDialog> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Você fez ${widget.score} pontos com ${widget.words} acertos. Digite de 3 a 5 letras para salvar no ranking.',
+              'Você fez ${widget.score} pontos com ${widget.words} acertos. Digite de 3 a 6 letras ou números para salvar no ranking.',
               style: const TextStyle(height: 1.35),
             ),
             const SizedBox(height: 16),
@@ -111,10 +111,10 @@ class _InitialsDialogState extends State<_InitialsDialog> {
               autofocus: true,
               textAlign: TextAlign.center,
               textCapitalization: TextCapitalization.characters,
-              maxLength: 5,
+              maxLength: 6,
               inputFormatters: [
-                FilteringTextInputFormatter.allow(RegExp('[a-zA-Z]')),
-                LengthLimitingTextInputFormatter(5),
+                FilteringTextInputFormatter.allow(RegExp('[a-zA-Z0-9]')),
+                LengthLimitingTextInputFormatter(6),
               ],
               style: const TextStyle(
                 fontSize: 28,
@@ -133,7 +133,7 @@ class _InitialsDialogState extends State<_InitialsDialog> {
         actions: [
           ElevatedButton(
             onPressed:
-                _currentInitials.length >= 3 && _currentInitials.length <= 5
+                _currentInitials.length >= 3 && _currentInitials.length <= 6
                 ? () => Navigator.of(context).pop(_currentInitials)
                 : null,
             child: const Text('Salvar'),
@@ -176,6 +176,36 @@ int _targetWordCountForStage({
   return min(level.targetWordCount, remainingWords);
 }
 
+int _normalizedStageNumberForLevel({
+  required GameLevel level,
+  required int? stageNumber,
+}) {
+  final totalStages = _stageCountForLevel(level);
+  if (stageNumber == null || stageNumber <= 0 || totalStages == 0) {
+    return 0;
+  }
+
+  return stageNumber.clamp(1, totalStages).toInt();
+}
+
+List<WordEntry> _wordEntriesForStage({
+  required GameLevel level,
+  required int stageNumber,
+}) {
+  final entries = wordBank[level] ?? const <WordEntry>[];
+  if (stageNumber <= 0 || level.mixesAllLevels || entries.isEmpty) {
+    return entries;
+  }
+
+  final start = (stageNumber - 1) * level.targetWordCount;
+  if (start < 0 || start >= entries.length) {
+    return entries;
+  }
+
+  final end = min(start + level.targetWordCount, entries.length);
+  return entries.sublist(start, end);
+}
+
 int _stageCountForLevel(GameLevel level) {
   if (level.mixesAllLevels) {
     return 0;
@@ -216,6 +246,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   static const Duration _hitCelebrationHold = Duration(milliseconds: 900);
 
   late final Map<GameLevel, WordDeck<WordEntry>> _wordDecks;
+  late final Map<GameLevel, List<WordEntry>> _wordEntriesByLevel;
   late final Random _random;
   Timer? _scoreTimer;
 
@@ -250,9 +281,22 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     _random = Random();
     _score = RankingStore.startingScoreForLevel(widget.level);
+    final replayStageNumber = widget.replayStage
+        ? _normalizedStageNumberForLevel(
+            level: widget.level,
+            stageNumber: widget.stageNumber,
+          )
+        : 0;
+    _wordEntriesByLevel = <GameLevel, List<WordEntry>>{
+      for (final level in widget.level.sourceLevels)
+        level: _wordEntriesForStage(
+          level: level,
+          stageNumber: replayStageNumber,
+        ),
+    };
     _wordDecks = <GameLevel, WordDeck<WordEntry>>{
       for (final level in widget.level.sourceLevels)
-        level: WordDeck(wordBank[level]!, random: _random),
+        level: WordDeck(_wordEntriesByLevel[level]!, random: _random),
     };
     unawaited(_prepareGame());
     unawaited(HintDisplayPreferences.instance.initialize());
@@ -280,7 +324,10 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
         max(1, totalWords - usedWords.length),
       );
     } else {
-      _roundStageNumber = widget.stageNumber ?? 0;
+      _roundStageNumber = _normalizedStageNumberForLevel(
+        level: widget.level,
+        stageNumber: widget.stageNumber,
+      );
       _roundTargetWordCount = _targetWordCountForStage(
         level: widget.level,
         stageNumber: _roundStageNumber,
@@ -444,7 +491,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   }
 
   bool _hasWordCandidate(GameLevel level, bool Function(WordEntry entry) test) {
-    return wordBank[level]!.any(test);
+    return _wordEntriesByLevel[level]!.any(test);
   }
 
   bool get _recordsCampaignProgress =>
@@ -623,7 +670,9 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
           }
         }
 
-        await RankingStore.instance.saveEntry(entry);
+        final rankingResult = await RankingStore.instance.saveEntryResult(
+          entry,
+        );
         if (!mounted) {
           return;
         }
@@ -644,6 +693,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                   ? entry.stageNumber
                   : null,
               highlightEntry: entry,
+              initialResult: rankingResult,
               continueLevel: continueLevel,
               completedLevel: completedLevel,
               completedGame: completedGame,
@@ -752,7 +802,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
 
   Future<void> _showInitialsError(InitialsUpdateResult result) async {
     final message = switch (result.status) {
-      InitialsUpdateStatus.invalid => 'Use de 3 a 5 letras.',
+      InitialsUpdateStatus.invalid => 'Use de 3 a 6 letras ou números.',
       InitialsUpdateStatus.unavailable =>
         'Essa assinatura já está em uso no ranking.',
       InitialsUpdateStatus.cooldown =>
@@ -1686,7 +1736,7 @@ class _HintPanel extends StatelessWidget {
                   if (mode == HintDisplayMode.dicaAberta) {
                     return Text(
                       'Nota da redação: $hint',
-                      maxLines: compact ? 2 : 3,
+                      maxLines: 3,
                       overflow: TextOverflow.visible,
                       style: style,
                     );
@@ -1695,7 +1745,7 @@ class _HintPanel extends StatelessWidget {
                   return _FlickeringHintText(
                     level: level,
                     hint: hint,
-                    maxLines: compact ? 2 : 3,
+                    maxLines: 3,
                     style: style,
                   );
                 },
@@ -2416,10 +2466,10 @@ class _GameLayoutMetrics {
           ? 88.0
           : 92.0,
       actionPanelHeight: veryCompact
-          ? 130.0
+          ? 154.0
           : compact
-          ? 136.0
-          : 148.0,
+          ? 158.0
+          : 168.0,
       compact: compact,
       prioritizeBoard: prioritizeBoard,
     );

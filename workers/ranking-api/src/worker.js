@@ -13,13 +13,21 @@ const POINTS_PER_SECOND = 1;
 const POINTS_PER_ERROR = 50;
 const POINTS_PER_HINT = 0;
 const POINTS_PER_SKIP = 160;
+const DEFAULT_RANKING_LIMIT = 50;
+const MAX_RANKING_LIMIT = 100;
+const RANKING_WINDOW_NEIGHBORS = 5;
 const CORS_HEADERS = {
   "access-control-allow-origin": "*",
   "access-control-allow-methods": "GET,POST,DELETE,OPTIONS",
   "access-control-allow-headers": "authorization,content-type,x-admin-token",
   "access-control-max-age": "86400",
 };
-const RESET_RANKING_PREFIXES = ["ranking:v1:", "ranking:v2:", "player:v1:"];
+const RESET_RANKING_PREFIXES = [
+  "ranking:v1:",
+  "ranking:v2:",
+  "player:v1:",
+  "positions:v1:",
+];
 
 export default {
   async fetch(request, env) {
@@ -68,6 +76,14 @@ export default {
       return json({ error: "method_not_allowed" }, 405);
     }
 
+    if (url.pathname === "/positions") {
+      if (request.method === "GET") {
+        return handlePositionsGet(url, env);
+      }
+
+      return json({ error: "method_not_allowed" }, 405);
+    }
+
     if (url.pathname !== "/ranking") {
       return json({ error: "not_found" }, 404);
     }
@@ -77,7 +93,7 @@ export default {
     }
 
     if (request.method === "POST") {
-      return handlePost(request, env);
+      return handlePost(url, request, env);
     }
 
     return json({ error: "method_not_allowed" }, 405);
@@ -87,6 +103,8 @@ export default {
 async function handleGet(url, env) {
   const level = url.searchParams.get("level");
   const stageNumber = normalizeStageNumber(url.searchParams.get("stage"));
+  const limit = normalizeLimit(url.searchParams.get("limit"));
+  const aroundEntry = normalizeWindowEntry(url);
   if (level && !LEVELS.has(level)) {
     return json({ error: "invalid_level" }, 400);
   }
@@ -101,10 +119,10 @@ async function handleGet(url, env) {
     ? await readLevel(env, level, stageNumber)
     : (await Promise.all([...LEVELS].map((item) => readLevel(env, item)))).flat();
 
-  return json({ entries: sortEntries(entries) });
+  return json(rankingPayload(sortEntries(entries), { limit, aroundEntry }));
 }
 
-async function handlePost(request, env) {
+async function handlePost(url, request, env) {
   let body;
   try {
     body = await request.json();
@@ -125,7 +143,29 @@ async function handlePost(request, env) {
     JSON.stringify(ranking),
   );
 
-  return json({ entries: ranking }, 201);
+  const limit = normalizeLimit(url.searchParams.get("limit"));
+  const payload = rankingPayload(ranking, {
+    limit,
+    aroundEntry: normalizeWindowEntry(url) ?? entry,
+  });
+  await saveKnownPosition(env, entry, payload.highlightedPosition);
+  return json(
+    payload,
+    201,
+  );
+}
+
+async function handlePositionsGet(url, env) {
+  const initials = normalizeInitials(url.searchParams.get("initials"));
+  if (!initials) {
+    return json({ error: "invalid_initials" }, 400);
+  }
+
+  const positions = await env.RANKING_KV.get(positionsKeyFor(initials), "json");
+  return json({
+    initials,
+    positions: positions && typeof positions === "object" ? positions : {},
+  });
 }
 
 async function handlePlayersGet(url, env) {
@@ -389,6 +429,71 @@ function normalizeEntry(entry) {
   };
 }
 
+function normalizeWindowEntry(url) {
+  const initials = normalizeInitials(url.searchParams.get("aroundInitials"));
+  if (!initials) {
+    return null;
+  }
+
+  return {
+    initials,
+    words: Number(url.searchParams.get("aroundWords")),
+    elapsedSeconds: Number(url.searchParams.get("aroundElapsed")),
+    errors: Number(url.searchParams.get("aroundErrors") ?? "0"),
+    hintsUsed: Number(url.searchParams.get("aroundHints") ?? "0"),
+    skipsUsed: Number(url.searchParams.get("aroundSkips") ?? "0"),
+  };
+}
+
+function normalizeLimit(value) {
+  const parsed = Number(value ?? DEFAULT_RANKING_LIMIT);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    return DEFAULT_RANKING_LIMIT;
+  }
+  return Math.min(parsed, MAX_RANKING_LIMIT);
+}
+
+function rankingPayload(ranking, { limit, aroundEntry } = {}) {
+  const totalEntries = ranking.length;
+  if (aroundEntry) {
+    const highlightedIndex = ranking.findIndex((entry) =>
+      samePerformance(entry, aroundEntry),
+    );
+    if (highlightedIndex >= 0) {
+      const start = Math.max(0, highlightedIndex - RANKING_WINDOW_NEIGHBORS);
+      const end = Math.min(
+        totalEntries,
+        highlightedIndex + RANKING_WINDOW_NEIGHBORS + 1,
+      );
+      return {
+        entries: ranking.slice(start, end),
+        startPosition: start + 1,
+        totalEntries,
+        highlightedPosition: highlightedIndex + 1,
+      };
+    }
+  }
+
+  const cappedLimit = normalizeLimit(String(limit ?? DEFAULT_RANKING_LIMIT));
+  const entries = ranking.slice(0, cappedLimit);
+  return {
+    entries,
+    startPosition: entries.length > 0 ? 1 : 0,
+    totalEntries,
+  };
+}
+
+function samePerformance(a, b) {
+  return (
+    a.initials === b.initials &&
+    a.words === b.words &&
+    a.elapsedSeconds === b.elapsedSeconds &&
+    Number(a.errors ?? 0) === Number(b.errors ?? 0) &&
+    Number(a.hintsUsed ?? 0) === Number(b.hintsUsed ?? 0) &&
+    Number(a.skipsUsed ?? 0) === Number(b.skipsUsed ?? 0)
+  );
+}
+
 function scoreForPerformance(
   level,
   words,
@@ -466,6 +571,22 @@ function playerKeyFor(initials) {
   return `player:v1:${initials}`;
 }
 
+function positionsKeyFor(initials) {
+  return `positions:v1:${initials}`;
+}
+
+async function saveKnownPosition(env, entry, position) {
+  if (!position || entry.stageNumber < 0) {
+    return;
+  }
+
+  const key = positionsKeyFor(entry.initials);
+  const current = await env.RANKING_KV.get(key, "json");
+  const positions = current && typeof current === "object" ? current : {};
+  positions[`${entry.level}:${entry.stageNumber}`] = position;
+  await env.RANKING_KV.put(key, JSON.stringify(positions));
+}
+
 async function backfillLegacyInitials(env) {
   const entries = (
     await Promise.all([...LEVELS].map((level) => readLevel(env, level)))
@@ -525,7 +646,7 @@ async function isInitialsAvailable(
 
 function normalizeInitials(value) {
   const initials = String(value ?? "").trim().toUpperCase();
-  return /^[A-Z]{3,5}$/.test(initials) ? initials : "";
+  return /^[A-Z0-9]{3,6}$/.test(initials) ? initials : "";
 }
 
 function normalizeStageNumber(value) {

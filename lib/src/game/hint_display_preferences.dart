@@ -16,9 +16,10 @@ class HintDisplayPreferences {
 
   static final HintDisplayPreferences instance = HintDisplayPreferences._();
   static const String storageKey = 'hint_display_mode_v1';
+  static const HintDisplayMode defaultMode = HintDisplayMode.dicaAberta;
 
   final ValueNotifier<HintDisplayMode> modeNotifier =
-      ValueNotifier<HintDisplayMode>(HintDisplayMode.olhoDeEditor);
+      ValueNotifier<HintDisplayMode>(defaultMode);
   bool _initialized = false;
 
   HintDisplayMode get mode => modeNotifier.value;
@@ -32,7 +33,7 @@ class HintDisplayPreferences {
       final preferences = await SharedPreferences.getInstance();
       modeNotifier.value = _modeFromName(preferences.getString(storageKey));
     } catch (_) {
-      modeNotifier.value = HintDisplayMode.olhoDeEditor;
+      modeNotifier.value = defaultMode;
     }
     _initialized = true;
   }
@@ -54,5 +55,5 @@ HintDisplayMode _modeFromName(String? name) {
       return mode;
     }
   }
-  return HintDisplayMode.olhoDeEditor;
+  return HintDisplayPreferences.defaultMode;
 }

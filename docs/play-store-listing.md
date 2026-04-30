@@ -22,14 +22,16 @@ O jogo inclui:
 
 - palavras em português brasileiro;
 - três níveis de dificuldade;
-- tabuleiros de 4x4, 6x6 e 8x8;
+- tabuleiros de 4x4, 5x5 e 6x6;
 - progresso claro a cada acerto;
 - trilhas leves por nível, com botão para pausar;
+- partidas jogáveis offline;
 - visual inspirado em jornal, leitura e jogos clássicos de palavras;
 - anúncios discretos e pouco frequentes, quando ativados.
 
 Entreletras não exige cadastro. É só abrir, escolher o nível e procurar a
-próxima palavra oculta.
+próxima palavra oculta. As partidas funcionam offline; ranking online,
+anúncios e diagnósticos dependem de conexão.
 
 ## Destaques para screenshots
 
@@ -51,7 +53,7 @@ próxima palavra oculta.
 ## Palavras-chave naturais
 
 palavras ocultas, anagrama, jogo de palavras, palavras em português, jogo casual, vocabulário,
-raciocínio, letras, passatempo, jogo offline, jogo inteligente
+raciocínio, letras, passatempo, jogável offline, ranking, jogo inteligente
 
 ## Notas de lançamento inicial
 

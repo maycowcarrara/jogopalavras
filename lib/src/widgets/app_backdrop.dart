@@ -61,7 +61,8 @@ class AppBackdrop extends StatelessWidget {
                     children: [
                       for (final action in topRightActions) ...[
                         action,
-                        if (showOptionsControl || action != topRightActions.last)
+                        if (showOptionsControl ||
+                            action != topRightActions.last)
                           const SizedBox(width: 8),
                       ],
                       if (showOptionsControl) const AppOptionsControl(),
@@ -365,7 +366,7 @@ class _OptionsDialogState extends State<_OptionsDialog> {
 
   String _messageForInitialsResult(InitialsUpdateResult result) {
     return switch (result.status) {
-      InitialsUpdateStatus.invalid => 'Use de 3 a 5 letras.',
+      InitialsUpdateStatus.invalid => 'Use de 3 a 6 letras ou números.',
       InitialsUpdateStatus.unavailable =>
         'Essa assinatura já está em uso no ranking.',
       InitialsUpdateStatus.cooldown =>
@@ -388,7 +389,8 @@ class _OptionsDialogState extends State<_OptionsDialog> {
   }
 
   bool get _canSaveInitials {
-    final validLength = _draftInitials.length >= 3 && _draftInitials.length <= 5;
+    final validLength =
+        _draftInitials.length >= 3 && _draftInitials.length <= 6;
     final changed = _draftInitials != _currentInitials;
     final locked = _currentInitials.isNotEmpty && _cooldown != null && changed;
     return validLength && changed && !locked && !_savingInitials;
@@ -396,192 +398,542 @@ class _OptionsDialogState extends State<_OptionsDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      backgroundColor: AppTheme.card,
-      shape: RoundedRectangleBorder(
-        side: const BorderSide(color: AppTheme.rule),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      title: const Text(
-        'Opções',
-        style: TextStyle(fontWeight: FontWeight.w900),
-      ),
-      content: SizedBox(
-        width: 320,
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const _OptionsSectionTitle(
-                icon: Icons.article_outlined,
-                label: 'Dica',
-              ),
-              SizedBox(
-                width: double.infinity,
-                child: SegmentedButton<HintDisplayMode>(
-                  showSelectedIcon: false,
-                  segments: [
-                    for (final mode in HintDisplayMode.values)
-                      ButtonSegment<HintDisplayMode>(
-                        value: mode,
-                        label: Text(mode.label),
-                      ),
-                  ],
-                  selected: {_hintDisplayMode},
-                  onSelectionChanged: (selection) {
-                    final mode = selection.first;
-                    setState(() => _hintDisplayMode = mode);
-                    widget.onHintDisplayModeChanged(mode);
-                  },
-                ),
-              ),
-              const Divider(height: 24),
-              const _OptionsSectionTitle(
-                icon: Icons.volume_up_rounded,
-                label: 'Som',
-              ),
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                dense: true,
-                title: const Text(
-                  'Música',
-                  style: TextStyle(fontWeight: FontWeight.w800),
-                ),
-                value: _musicEnabled,
-                onChanged: (value) {
-                  setState(() => _musicEnabled = value);
-                  widget.onToggleMusic();
-                },
-              ),
-              Row(
-                children: [
-                  const SizedBox(
-                    width: 28,
-                    child: Icon(
-                      Icons.volume_up_rounded,
-                      color: AppTheme.pressBlue,
-                      size: 18,
-                    ),
-                  ),
-                  Expanded(
-                    child: Slider(
-                      value: _volume,
-                      onChanged: (value) {
-                        setState(() {
-                          _volume = value;
-                          if (value > 0) {
-                            _musicEnabled = true;
-                          }
-                        });
-                        widget.onVolumeChanged(value);
-                      },
-                    ),
-                  ),
-                ],
-              ),
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                dense: true,
-                title: const Text(
-                  'Efeitos',
-                  style: TextStyle(fontWeight: FontWeight.w800),
-                ),
-                value: _effectsEnabled,
-                onChanged: (value) {
-                  setState(() => _effectsEnabled = value);
-                  widget.onToggleEffects();
-                },
-              ),
-              const Divider(height: 24),
-              const _OptionsSectionTitle(
-                icon: Icons.badge_rounded,
-                label: 'Ranking',
-              ),
-              TextField(
-                controller: _initialsController,
-                textCapitalization: TextCapitalization.characters,
-                maxLength: 5,
-                inputFormatters: [
-                  FilteringTextInputFormatter.allow(RegExp('[a-zA-Z]')),
-                  LengthLimitingTextInputFormatter(5),
-                ],
-                decoration: InputDecoration(
-                  counterText: '',
-                  labelText: _currentInitials.isEmpty
-                      ? 'Criar assinatura'
-                      : 'Assinatura',
-                  helperText: _currentInitials.isNotEmpty && _cooldown != null
-                      ? 'Nova troca em ${_formatCooldown(_cooldown)}'
-                      : 'Use de 3 a 5 letras',
-                  border: const OutlineInputBorder(),
-                ),
-                onChanged: _handleInitialsChanged,
-              ),
-              if (_initialsMessage != null) ...[
-                const SizedBox(height: 8),
-                Text(
-                  _initialsMessage!,
-                  style: TextStyle(
-                    color: _initialsMessage == 'Assinatura salva.'
-                        ? AppTheme.pressGreen
-                        : AppTheme.pressRed,
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w800,
-                    height: 1.18,
-                  ),
-                ),
-              ],
-              const SizedBox(height: 10),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  onPressed: _canSaveInitials ? _saveInitials : null,
-                  icon: _savingInitials
-                      ? const SizedBox.square(
-                          dimension: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.save_rounded, size: 18),
-                  label: const Text('Salvar assinatura'),
-                ),
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 24),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 390),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: AppTheme.card,
+            border: Border.all(color: AppTheme.rule),
+            borderRadius: BorderRadius.circular(18),
+            boxShadow: [
+              BoxShadow(
+                color: AppTheme.midnight.withValues(alpha: 0.18),
+                blurRadius: 28,
+                offset: const Offset(0, 16),
               ),
             ],
           ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(17),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _OptionsHeader(onClose: () => Navigator.of(context).pop()),
+                Flexible(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _OptionsCard(
+                          icon: Icons.article_outlined,
+                          title: 'Dica',
+                          subtitle: 'Escolha como a pista aparece no jogo.',
+                          child: SizedBox(
+                            width: double.infinity,
+                            child: SegmentedButton<HintDisplayMode>(
+                              showSelectedIcon: false,
+                              style: _segmentedButtonStyle(),
+                              segments: [
+                                for (final mode in HintDisplayMode.values)
+                                  ButtonSegment<HintDisplayMode>(
+                                    value: mode,
+                                    label: Text(mode.label),
+                                  ),
+                              ],
+                              selected: {_hintDisplayMode},
+                              onSelectionChanged: (selection) {
+                                final mode = selection.first;
+                                setState(() => _hintDisplayMode = mode);
+                                widget.onHintDisplayModeChanged(mode);
+                              },
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        _OptionsCard(
+                          icon: Icons.volume_up_rounded,
+                          title: 'Som',
+                          subtitle: _musicEnabled
+                              ? 'Trilha em ${(_volume * 100).round()}%.'
+                              : 'Trilha desligada.',
+                          child: Column(
+                            children: [
+                              _OptionSwitchRow(
+                                icon: _musicEnabled
+                                    ? Icons.music_note_rounded
+                                    : Icons.music_off_rounded,
+                                title: 'Música',
+                                subtitle: 'Liga ou pausa a trilha de fundo.',
+                                value: _musicEnabled,
+                                onChanged: (value) {
+                                  setState(() => _musicEnabled = value);
+                                  widget.onToggleMusic();
+                                },
+                              ),
+                              const SizedBox(height: 10),
+                              _VolumeControl(
+                                volume: _volume,
+                                enabled: _musicEnabled,
+                                onChanged: (value) {
+                                  setState(() {
+                                    _volume = value;
+                                    if (value > 0) {
+                                      _musicEnabled = true;
+                                    }
+                                  });
+                                  widget.onVolumeChanged(value);
+                                },
+                              ),
+                              const SizedBox(height: 10),
+                              _OptionSwitchRow(
+                                icon: _effectsEnabled
+                                    ? Icons.auto_awesome_rounded
+                                    : Icons.motion_photos_off_rounded,
+                                title: 'Efeitos',
+                                subtitle:
+                                    'Animações e pequenos retornos visuais.',
+                                value: _effectsEnabled,
+                                onChanged: (value) {
+                                  setState(() => _effectsEnabled = value);
+                                  widget.onToggleEffects();
+                                },
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        _OptionsCard(
+                          icon: Icons.badge_rounded,
+                          title: 'Ranking',
+                          subtitle: _currentInitials.isEmpty
+                              ? 'Crie uma assinatura para disputar posições.'
+                              : 'Sua assinatura aparece nos placares.',
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              TextField(
+                                controller: _initialsController,
+                                textCapitalization:
+                                    TextCapitalization.characters,
+                                maxLength: 6,
+                                inputFormatters: [
+                                  FilteringTextInputFormatter.allow(
+                                    RegExp('[a-zA-Z0-9]'),
+                                  ),
+                                  LengthLimitingTextInputFormatter(6),
+                                ],
+                                decoration: InputDecoration(
+                                  counterText: '',
+                                  filled: true,
+                                  fillColor: Colors.white.withValues(
+                                    alpha: 0.62,
+                                  ),
+                                  labelText: _currentInitials.isEmpty
+                                      ? 'Criar assinatura'
+                                      : 'Assinatura',
+                                  helperText:
+                                      _currentInitials.isNotEmpty &&
+                                          _cooldown != null
+                                      ? 'Nova troca em ${_formatCooldown(_cooldown)}'
+                                      : 'Use de 3 a 6 letras ou números',
+                                  prefixIcon: const Icon(
+                                    Icons.edit_note_rounded,
+                                    color: AppTheme.pressBlue,
+                                  ),
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  enabledBorder: OutlineInputBorder(
+                                    borderSide: const BorderSide(
+                                      color: AppTheme.rule,
+                                    ),
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  focusedBorder: OutlineInputBorder(
+                                    borderSide: const BorderSide(
+                                      color: AppTheme.pressBlue,
+                                      width: 1.4,
+                                    ),
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                ),
+                                onChanged: _handleInitialsChanged,
+                              ),
+                              if (_initialsMessage != null) ...[
+                                const SizedBox(height: 8),
+                                _InitialsMessage(
+                                  message: _initialsMessage!,
+                                  success:
+                                      _initialsMessage == 'Assinatura salva.',
+                                ),
+                              ],
+                              const SizedBox(height: 12),
+                              SizedBox(
+                                width: double.infinity,
+                                child: ElevatedButton.icon(
+                                  onPressed: _canSaveInitials
+                                      ? _saveInitials
+                                      : null,
+                                  icon: _savingInitials
+                                      ? const SizedBox.square(
+                                          dimension: 16,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                          ),
+                                        )
+                                      : const Icon(
+                                          Icons.save_rounded,
+                                          size: 18,
+                                        ),
+                                  label: const Text('Salvar assinatura'),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Fechar'),
-        ),
-      ],
+    );
+  }
+
+  ButtonStyle _segmentedButtonStyle() {
+    return SegmentedButton.styleFrom(
+      backgroundColor: Colors.white.withValues(alpha: 0.48),
+      selectedBackgroundColor: AppTheme.pressBlue.withValues(alpha: 0.14),
+      selectedForegroundColor: AppTheme.pressBlue,
+      foregroundColor: AppTheme.ink,
+      side: const BorderSide(color: AppTheme.rule),
+      textStyle: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13.5),
     );
   }
 }
 
-class _OptionsSectionTitle extends StatelessWidget {
-  const _OptionsSectionTitle({required this.icon, required this.label});
+class _OptionsHeader extends StatelessWidget {
+  const _OptionsHeader({required this.onClose});
 
-  final IconData icon;
-  final String label;
+  final VoidCallback onClose;
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Icon(icon, color: AppTheme.pressBlue, size: 19),
-        const SizedBox(width: 8),
-        Text(
-          label,
-          style: const TextStyle(
-            color: AppTheme.midnight,
-            fontSize: 15,
-            fontWeight: FontWeight.w900,
-            height: 1,
-          ),
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: AppTheme.midnight,
+        border: Border(
+          bottom: BorderSide(color: AppTheme.pressGold.withValues(alpha: 0.55)),
         ),
-      ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 14, 10, 14),
+        child: Row(
+          children: [
+            const _OptionsIconBadge(
+              icon: Icons.settings_rounded,
+              background: Colors.white,
+              foreground: AppTheme.midnight,
+            ),
+            const SizedBox(width: 12),
+            const Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Opções',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w900,
+                      height: 1.05,
+                    ),
+                  ),
+                  SizedBox(height: 3),
+                  Text(
+                    'Som, dicas e ranking em um só lugar.',
+                    style: TextStyle(
+                      color: Color(0xFFECE4D7),
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w700,
+                      height: 1.15,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            IconButton(
+              tooltip: 'Fechar',
+              onPressed: onClose,
+              icon: const Icon(Icons.close_rounded),
+              color: Colors.white,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _OptionsCard extends StatelessWidget {
+  const _OptionsCard({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.child,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.42),
+        border: Border.all(color: AppTheme.rule.withValues(alpha: 0.86)),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(13),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _OptionsIconBadge(icon: icon),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: const TextStyle(
+                          color: AppTheme.midnight,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w900,
+                          height: 1.05,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        subtitle,
+                        style: TextStyle(
+                          color: AppTheme.ink.withValues(alpha: 0.72),
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w700,
+                          height: 1.18,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            child,
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _OptionsIconBadge extends StatelessWidget {
+  const _OptionsIconBadge({
+    required this.icon,
+    this.background,
+    this.foreground = AppTheme.pressBlue,
+  });
+
+  final IconData icon;
+  final Color? background;
+  final Color foreground;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: background ?? AppTheme.pressBlue.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(9),
+      ),
+      child: SizedBox.square(
+        dimension: 34,
+        child: Icon(icon, color: foreground, size: 19),
+      ),
+    );
+  }
+}
+
+class _OptionSwitchRow extends StatelessWidget {
+  const _OptionSwitchRow({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(10),
+      onTap: () => onChanged(!value),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+        child: Row(
+          children: [
+            SizedBox.square(
+              dimension: 32,
+              child: Icon(icon, color: AppTheme.pressBlue, size: 20),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      color: AppTheme.midnight,
+                      fontSize: 14.5,
+                      fontWeight: FontWeight.w900,
+                      height: 1.05,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      color: AppTheme.ink.withValues(alpha: 0.68),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      height: 1.15,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Switch(value: value, onChanged: onChanged),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _VolumeControl extends StatelessWidget {
+  const _VolumeControl({
+    required this.volume,
+    required this.enabled,
+    required this.onChanged,
+  });
+
+  final double volume;
+  final bool enabled;
+  final ValueChanged<double> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final percent = (volume * 100).round();
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: AppTheme.newsprint.withValues(alpha: 0.58),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(10, 8, 12, 8),
+        child: Row(
+          children: [
+            Icon(
+              enabled ? Icons.volume_up_rounded : Icons.volume_off_rounded,
+              color: enabled
+                  ? AppTheme.pressBlue
+                  : AppTheme.ink.withValues(alpha: 0.45),
+              size: 20,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Slider(value: volume, onChanged: onChanged),
+            ),
+            SizedBox(
+              width: 42,
+              child: Text(
+                '$percent%',
+                textAlign: TextAlign.right,
+                style: TextStyle(
+                  color: AppTheme.ink.withValues(alpha: enabled ? 0.84 : 0.5),
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w900,
+                  height: 1,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _InitialsMessage extends StatelessWidget {
+  const _InitialsMessage({required this.message, required this.success});
+
+  final String message;
+  final bool success;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = success ? AppTheme.pressGreen : AppTheme.pressRed;
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        border: Border.all(color: color.withValues(alpha: 0.42)),
+        borderRadius: BorderRadius.circular(9),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        child: Row(
+          children: [
+            Icon(
+              success ? Icons.check_circle_rounded : Icons.info_rounded,
+              color: color,
+              size: 18,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                message,
+                style: TextStyle(
+                  color: color,
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w800,
+                  height: 1.18,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

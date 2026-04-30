@@ -130,7 +130,7 @@ extension GameLevelDetails on GameLevel {
       'audio/bodleasons-lofi-chill-smooth-chill-lofi-for-vlogs-and-background-music-159456.mp3',
     GameLevel.medium => 'audio/penguinmusic-better-day-186374.mp3',
     GameLevel.hard => 'audio/comastudio-order-99518.mp3',
-    GameLevel.pautaLivre => 'audio/alisiabeats-titanium-170190.mp3',
+    GameLevel.pautaLivre => 'audio/kontraa-water-afro-pop-music-445661.mp3',
   };
 
   double get soundtrackVolume => switch (this) {

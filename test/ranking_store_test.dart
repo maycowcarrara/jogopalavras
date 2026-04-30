@@ -162,6 +162,19 @@ void main() {
     expect(await RankingStore.instance.loadLastInitials(), 'ABCDE');
   });
 
+  test('permite numeros na assinatura do ranking', () async {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+
+    final result = await RankingStore.instance.updatePlayerInitials(
+      'a1b2c3',
+      now: DateTime(2026, 4, 1),
+    );
+
+    expect(result.saved, isTrue);
+    expect(result.initials, 'A1B2C3');
+    expect(await RankingStore.instance.loadLastInitials(), 'A1B2C3');
+  });
+
   test('salvar entrada atualiza iniciais lembradas', () async {
     SharedPreferences.setMockInitialValues(<String, Object>{});
 

@@ -1,5 +1,7 @@
 import java.io.FileInputStream
+import java.util.Base64
 import java.util.Properties
+import org.gradle.api.GradleException
 
 plugins {
     id("com.android.application")
@@ -13,6 +15,27 @@ android {
     val keystorePropertiesFile = rootProject.file("key.properties")
     if (keystorePropertiesFile.exists()) {
         FileInputStream(keystorePropertiesFile).use { keystoreProperties.load(it) }
+    }
+    val dartDefines = providers.gradleProperty("dart-defines").orNull
+        ?.split(",")
+        ?.mapNotNull { encoded ->
+            runCatching {
+                String(Base64.getDecoder().decode(encoded)).split("=", limit = 2)
+            }.getOrNull()
+        }
+        ?.filter { it.size == 2 }
+        ?.associate { it[0] to it[1] }
+        ?: emptyMap()
+    val adsEnabledForBuild = dartDefines["ADS_ENABLED"] == "true"
+    val admobAndroidAppId = providers.gradleProperty("ADMOB_ANDROID_APP_ID")
+        .orElse(providers.environmentVariable("ADMOB_ANDROID_APP_ID"))
+        .orNull
+        ?.takeIf { it.isNotBlank() }
+    val sampleAndroidAppId = "ca-app-pub-3940256099942544~3347511713"
+    if (adsEnabledForBuild && admobAndroidAppId == null) {
+        throw GradleException(
+            "ADS_ENABLED=true exige ADMOB_ANDROID_APP_ID com o App ID real do AdMob."
+        )
     }
 
     namespace = "br.com.mrcdev.entreletras"
@@ -37,6 +60,7 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        resValue("string", "admob_app_id", admobAndroidAppId ?: sampleAndroidAppId)
     }
 
     signingConfigs {

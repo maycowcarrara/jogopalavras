@@ -11,6 +11,8 @@ em jogo casual, inteligente e com anúncios não intrusivos.
   Google Play para novos apps.
 - assinatura de release: configurada via `android/key.properties`.
 - formato de envio: Android App Bundle (`.aab`).
+- partidas: jogáveis offline; ranking online, anúncios e diagnósticos dependem
+  de conexão.
 - anúncios: AdMob, desligado por padrão em release até receber IDs reais por
   `dart-define`.
 
@@ -21,9 +23,9 @@ em jogo casual, inteligente e com anúncios não intrusivos.
    publicar, trocar o pacote significa publicar outro app.
 3. Crie um `android/key.properties` a partir de `android/key.properties.example`.
 4. Gere ou aponte para seu keystore de upload.
-5. Substitua o `admob_app_id` de teste em
-   `android/app/src/main/res/values/strings.xml` pelo App ID real do AdMob.
-6. Ative anúncios apenas com IDs reais usando os `dart-define` abaixo.
+5. Confirme se os IDs reais do AdMob continuam configurados em
+   `android/gradle.properties` e `package.json`.
+6. Ative anúncios usando o script `npm run build:aab:ads`.
 7. Publique a política de privacidade pelo GitHub Pages usando
    `docs/privacy-policy.html`.
 8. Preencha Segurança de Dados, Anúncios e Classificação de Conteúdo na Play
@@ -34,10 +36,7 @@ em jogo casual, inteligente e com anúncios não intrusivos.
 ## Build sugerido
 
 ```bash
-flutter build appbundle --release ^
-  --dart-define=ADS_ENABLED=true ^
-  --dart-define=ADMOB_ANDROID_BANNER_ID=seu_banner_id ^
-  --dart-define=ADMOB_ANDROID_INTERSTITIAL_ID=seu_interstitial_id
+npm run build:aab:ads
 ```
 
 Sem anúncios:
@@ -59,11 +58,13 @@ flutter build appbundle --release
 
 ## Dados e privacidade
 
-O app não cria conta, não pede nome, email ou telefone e não salva dados em
-servidor próprio. Se AdMob for ativado, o SDK de anúncios pode tratar dados
-como identificadores do dispositivo, informações de anúncios, diagnósticos e
-interações para exibir/medir publicidade. Isso deve constar na política de
-privacidade e no formulário de Segurança de Dados.
+O app não cria conta e não pede nome, email ou telefone. O ranking online pode
+armazenar assinatura, pontuação e dados de rodada, e os diagnósticos podem
+armazenar informações técnicas de falhas por até 30 dias. Se AdMob for ativado,
+o SDK de anúncios pode tratar dados como identificadores do dispositivo,
+informações de anúncios, diagnósticos e interações para exibir/medir
+publicidade. Isso deve constar na política de privacidade e no formulário de
+Segurança de Dados.
 
 Para lançamento internacional, configure consentimento quando exigido por lei
 local, especialmente EEA/Reino Unido, antes de ativar anúncios personalizados.
