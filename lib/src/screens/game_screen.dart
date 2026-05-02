@@ -174,6 +174,16 @@ List<WordEntry> _wordEntriesForStage({
 
 int _stageCountForLevel(GameLevel level) => campaignStageCountForLevel(level);
 
+bool _shouldShowStageCelebration(RankingEntry entry) {
+  if (entry.level.mixesAllLevels || entry.stageNumber <= 0) {
+    return false;
+  }
+
+  return campaignProductionStepsForLevel(
+    entry.level,
+  ).any((step) => step.lastStage == entry.stageNumber);
+}
+
 String _chapterTitleForLevel(GameLevel level) => switch (level) {
   GameLevel.easy => 'Pauta',
   GameLevel.medium => 'Redação',
@@ -736,13 +746,19 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       if (completedWords >= _roundTargetWordCount) {
         _isCompletingRound = true;
         _scoreTimer?.cancel();
-        await GameMusicService.instance.playEndOfGame();
         final entry = await _completedRankingEntry();
         if (entry == null || !mounted) {
           return;
         }
 
+        if (_shouldShowStageCelebration(entry)) {
+          await GameMusicService.instance.playStageCompletionBell();
+        } else {
+          await GameMusicService.instance.playEndOfGame();
+        }
+
         GameLevel? continueLevel = widget.level;
+        int? continueStageNumber;
         GameLevel? completedLevel;
         var completedGame = false;
         if (_recordsCampaignProgress) {
@@ -759,6 +775,11 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
             final campaignProgress = await CampaignProgressStore.instance
                 .completeLevel(widget.level);
             continueLevel = campaignProgress.nextLevelAfter(widget.level);
+          } else {
+            continueStageNumber = campaignStageNumberForUsedWords(
+              level: widget.level,
+              usedWords: usedWords.length,
+            );
           }
         }
 
@@ -787,6 +808,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
               highlightEntry: entry,
               initialResult: rankingResult,
               continueLevel: continueLevel,
+              continueStageNumber: continueStageNumber,
               completedLevel: completedLevel,
               completedGame: completedGame,
             ),

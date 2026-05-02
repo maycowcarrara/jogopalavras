@@ -30,16 +30,24 @@ class GameMusicService {
   static const String _musicVolumeKey = 'music_volume_v1';
   static const List<String> _playlistAssets = [
     'audio/alisiabeats-titanium-170190.mp3',
+    'audio/andriig-relaxing-relax-music-473810.mp3',
+    'audio/atlasaudio-piano-relaxing-510242.mp3',
     'audio/bodleasons-lofi-chill-smooth-chill-lofi-for-vlogs-and-background-music-159456.mp3',
     'audio/comastudio-order-99518.mp3',
     'audio/kontraa-water-afro-pop-music-445661.mp3',
+    'audio/leberch-relaxation-morning-354986.mp3',
+    'audio/monume-chill-chill-music-519245.mp3',
+    'audio/music_for_video-please-calm-my-mind-125566.mp3',
     'audio/music_for_videos-relaxing-145038.mp3',
+    'audio/oceanframemusic-relax-music-515140.mp3',
     'audio/penguinmusic-better-day-186374.mp3',
     'audio/penguinmusic-penguinmusic-modern-chillout-future-calm-12641.mp3',
     'audio/romanbelov-spirit-blossom-15285.mp3',
+    'audio/the_mountain-relaxing-142297.mp3',
   ];
   static const String _wordVictoryKeyAsset = 'audio/typewriter_key.wav';
   static const String _endOfGameAsset = 'audio/endofgame.mp3';
+  static const String _stageCompletionBellAsset = 'audio/typewriter_bell.wav';
   static const double _effectsOutputVolume = 1;
   static const double _maxMusicVolume = _effectsOutputVolume * 0.5;
 
@@ -279,6 +287,10 @@ class GameMusicService {
 
   Future<void> playEndOfGame() async {
     await _playEffect(_endOfGamePlayer, _endOfGameAsset);
+  }
+
+  Future<void> playStageCompletionBell() async {
+    await _playEffect(_endOfGamePlayer, _stageCompletionBellAsset);
   }
 
   Future<void> dispose() async {

@@ -194,6 +194,50 @@ void main() {
     expect(find.text('U16'), findsNothing);
   });
 
+  testWidgets('continuar após fechar Pauta abre Apuração', (tester) async {
+    SharedPreferences.setMockInitialValues({
+      'word_progress_used_v1:easy': List<String>.generate(
+        100,
+        (index) => 'PALAVRA_$index',
+      ),
+    });
+    final highlightEntry = RankingEntry(
+      initials: 'MAY',
+      level: GameLevel.easy,
+      stageNumber: 10,
+      score: RankingStore.scoreForPerformance(
+        level: GameLevel.easy,
+        words: 10,
+        elapsedSeconds: 90,
+      ),
+      words: 10,
+      elapsedSeconds: 90,
+      completedAt: DateTime(2026, 5, 2),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: RankingScreen(
+          initialLevel: GameLevel.easy,
+          initialStageNumber: 10,
+          highlightEntry: highlightEntry,
+          initialEntries: [highlightEntry],
+          continueLevel: GameLevel.easy,
+          continueStageNumber: 11,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Continuar em Apuração'), findsOneWidget);
+
+    await tester.tap(find.text('Continuar em Apuração'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('Apuração 11/19'), findsOneWidget);
+    expect(find.text('0/10 palavras'), findsOneWidget);
+  });
+
   testWidgets('card de próxima pauta abre a fase atual', (tester) async {
     SharedPreferences.setMockInitialValues({'intro_seen_v1': true});
     tester.view.physicalSize = const Size(1080, 1920);

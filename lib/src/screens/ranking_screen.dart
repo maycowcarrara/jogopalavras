@@ -21,6 +21,7 @@ class RankingScreen extends StatelessWidget {
     this.initialEntries,
     this.initialResult,
     this.continueLevel,
+    this.continueStageNumber,
     this.completedLevel,
     this.completedGame = false,
   });
@@ -31,6 +32,7 @@ class RankingScreen extends StatelessWidget {
   final List<RankingEntry>? initialEntries;
   final RankingEntriesResult? initialResult;
   final GameLevel? continueLevel;
+  final int? continueStageNumber;
   final GameLevel? completedLevel;
   final bool completedGame;
 
@@ -75,6 +77,7 @@ class RankingScreen extends StatelessWidget {
                 initialEntries: initialEntries,
                 initialResult: initialResult,
                 continueLevel: continueLevel,
+                continueStageNumber: continueStageNumber,
                 completedLevel: completedLevel,
                 completedGame: completedGame,
               ),
@@ -134,6 +137,9 @@ class RankingScreen extends StatelessWidget {
                           : null,
                       continueLevel: highlightEntry?.level == level
                           ? continueLevel
+                          : null,
+                      continueStageNumber: highlightEntry?.level == level
+                          ? continueStageNumber
                           : null,
                       completedLevel: highlightEntry?.level == level
                           ? completedLevel
@@ -207,6 +213,7 @@ class _RankingLevelView extends StatefulWidget {
     this.initialEntries,
     this.initialResult,
     this.continueLevel,
+    this.continueStageNumber,
     this.completedLevel,
     this.completedGame = false,
   });
@@ -217,6 +224,7 @@ class _RankingLevelView extends StatefulWidget {
   final List<RankingEntry>? initialEntries;
   final RankingEntriesResult? initialResult;
   final GameLevel? continueLevel;
+  final int? continueStageNumber;
   final GameLevel? completedLevel;
   final bool completedGame;
 
@@ -334,6 +342,7 @@ class _RankingLevelViewState extends State<_RankingLevelView> {
                   highlightEntry: widget.highlightEntry,
                   highlightPosition: highlightPosition,
                   continueLevel: widget.continueLevel,
+                  continueStageNumber: widget.continueStageNumber,
                   completedLevel: widget.completedLevel,
                   completedGame: widget.completedGame,
                   isLoading: isLoading,
@@ -469,6 +478,7 @@ class _RankingHeader extends StatelessWidget {
     this.highlightEntry,
     this.highlightPosition = 0,
     this.continueLevel,
+    this.continueStageNumber,
     this.completedLevel,
     this.completedGame = false,
     this.isLoading = false,
@@ -479,6 +489,7 @@ class _RankingHeader extends StatelessWidget {
   final RankingEntry? highlightEntry;
   final int highlightPosition;
   final GameLevel? continueLevel;
+  final int? continueStageNumber;
   final GameLevel? completedLevel;
   final bool completedGame;
   final bool isLoading;
@@ -582,6 +593,12 @@ class _RankingHeader extends StatelessWidget {
                               highlightEntry == null &&
                               stageNumber != null &&
                               stageNumber! > 0;
+                          final campaignContinueStage =
+                              highlightEntry != null &&
+                                  continueLevel != null &&
+                                  continueLevel == level
+                              ? continueStageNumber
+                              : null;
                           Navigator.of(context).pushReplacement(
                             appPageRoute<void>(
                               settings: RouteSettings(
@@ -589,9 +606,9 @@ class _RankingHeader extends StatelessWidget {
                               ),
                               builder: (_) => GameScreen(
                                 level: nextLevel,
-                                stageNumber: replaySelectedStage
-                                    ? stageNumber
-                                    : null,
+                                stageNumber:
+                                    campaignContinueStage ??
+                                    (replaySelectedStage ? stageNumber : null),
                                 replayStage: replaySelectedStage,
                               ),
                             ),
@@ -603,7 +620,13 @@ class _RankingHeader extends StatelessWidget {
                               ? stageLabel != null
                                     ? 'Jogar $stageLabel $stageNumber'
                                     : 'Jogar no ${level.title.toLowerCase()}'
-                              : continueLevel == null || continueLevel == level
+                              : continueLevel == null
+                              ? 'Continuar fase'
+                              : continueLevel == level &&
+                                    continueStageNumber != null &&
+                                    continueStageNumber! > 0
+                              ? 'Continuar em ${campaignStageLabelForLevel(level, continueStageNumber!)}'
+                              : continueLevel == level
                               ? 'Continuar fase'
                               : 'Continuar no ${continueLevel!.title.toLowerCase()}',
                         ),
