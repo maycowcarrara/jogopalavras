@@ -15,7 +15,7 @@ extension GameLevelDetails on GameLevel {
     GameLevel.easy => 'Palavras curtas e bem familiares',
     GameLevel.medium => 'Mistura equilibrada para ganhar ritmo',
     GameLevel.hard => 'Desafio com palavras maiores e tabuleiro amplo',
-    GameLevel.pautaLivre => 'Uma rodada aleatória com todos os níveis',
+    GameLevel.pautaLivre => 'Jogo rápido com todos os níveis',
   };
 
   String get tag => switch (this) {
@@ -78,7 +78,7 @@ extension GameLevelDetails on GameLevel {
     GameLevel.easy => 'Cada acerto revela uma nova chamada.',
     GameLevel.medium => 'Monte palavras para fechar a manchete.',
     GameLevel.hard => 'Complete a página antes do fechamento.',
-    GameLevel.pautaLivre => 'A rodada mistura pautas leves e manchetes fortes.',
+    GameLevel.pautaLivre => 'Jogo rápido com pautas leves e manchetes fortes.',
   };
 
   List<Color> get sceneGradient => switch (this) {

@@ -214,7 +214,7 @@ class RankingStore {
   static const int pointsPerWord = 30;
   static const int pointsPerSecond = 1;
   static const int pointsPerError = 50;
-  static const int pointsPerHint = 0;
+  static const int pointsPerHint = 80;
   static const int pointsPerSkip = 160;
 
   Future<List<RankingEntry>> loadEntries({

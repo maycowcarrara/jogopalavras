@@ -6,9 +6,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:jogopalavras/src/game/campaign_progress_store.dart';
+import 'package:jogopalavras/src/game/campaign_stage_rules.dart';
 import 'package:jogopalavras/src/game/game_level.dart';
 import 'package:jogopalavras/src/game/ranking_store.dart';
-import 'package:jogopalavras/src/game/word_bank.dart';
 import 'package:jogopalavras/src/game/word_progress_store.dart';
 import 'package:jogopalavras/src/navigation/app_page_route.dart';
 import 'package:jogopalavras/src/navigation/app_route_observer.dart';
@@ -17,6 +17,7 @@ import 'package:jogopalavras/src/screens/ranking_screen.dart';
 import 'package:jogopalavras/src/theme/app_theme.dart';
 import 'package:jogopalavras/src/widgets/ad_banner_slot.dart';
 import 'package:jogopalavras/src/widgets/app_backdrop.dart';
+import 'package:jogopalavras/src/widgets/news_ticker_bar.dart';
 import 'package:jogopalavras/src/widgets/reveal_on_mount.dart';
 
 class LevelScreen extends StatefulWidget {
@@ -55,7 +56,7 @@ class _LevelScreenState extends State<LevelScreen> with RouteAware {
   }
 
   Future<_CampaignSnapshot> _loadCampaignSnapshot() async {
-    final progress = await CampaignProgressStore.instance.loadProgress();
+    var progress = await CampaignProgressStore.instance.loadProgress();
     final usedWordCounts = <GameLevel, int>{};
     for (final level in const [
       GameLevel.easy,
@@ -65,6 +66,10 @@ class _LevelScreenState extends State<LevelScreen> with RouteAware {
       usedWordCounts[level] = (await WordProgressStore.instance.loadUsedWords(
         level,
       )).length;
+      if (!progress.isCompleted(level) &&
+          usedWordCounts[level]! >= campaignRequiredWordCountForLevel(level)) {
+        progress = await CampaignProgressStore.instance.completeLevel(level);
+      }
     }
 
     final rankingPositions = await _loadRankingPositions(
@@ -257,11 +262,13 @@ class _LevelScreenState extends State<LevelScreen> with RouteAware {
             body: AppBackdrop(
               primary: AppTheme.pressBlue,
               secondary: AppTheme.pressRed,
+              showOptionsControl: false,
               child: SafeArea(
                 child: Column(
                   children: [
+                    const NewsTickerBar(),
                     Padding(
-                      padding: const EdgeInsets.fromLTRB(18, 6, 18, 0),
+                      padding: const EdgeInsets.fromLTRB(18, 12, 18, 0),
                       child: Column(
                         children: [
                           const _MapHeader(),
@@ -314,34 +321,40 @@ class _MapHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    return Padding(
-      padding: EdgeInsets.zero,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Mapa da edição',
-            style: theme.textTheme.headlineSmall?.copyWith(
-              color: AppTheme.midnight,
-              fontWeight: FontWeight.w900,
-              letterSpacing: 0,
-              fontSize: 26,
-              height: 1,
-            ),
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Mapa da edição',
+                style: theme.textTheme.headlineSmall?.copyWith(
+                  color: AppTheme.midnight,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 0,
+                  fontSize: 26,
+                  height: 1,
+                ),
+              ),
+              const SizedBox(height: 5),
+              Text(
+                'Avance pelas partidas de cada editoria até entregar o jornal.',
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: AppTheme.ink.withValues(alpha: 0.72),
+                  fontWeight: FontWeight.w700,
+                  height: 1.16,
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 5),
-          Text(
-            'Avance pelas partidas de cada editoria até entregar o jornal.',
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: AppTheme.ink.withValues(alpha: 0.72),
-              fontWeight: FontWeight.w700,
-              height: 1.16,
-            ),
-          ),
-        ],
-      ),
+        ),
+        const SizedBox(width: 12),
+        const AppOptionsControl(),
+      ],
     );
   }
 }
@@ -361,7 +374,7 @@ class _NextObjectiveBanner extends StatelessWidget {
     final remainingWords = campaign.remainingWordsFor(level);
     final title = campaign.completedGame
         ? 'Edição entregue'
-        : '${_nextObjectivePrefix(level)} $current/$total';
+        : 'Jogar ${campaignStageLabelForLevel(level, current)} $current/$total';
     final subtitle = campaign.completedGame
         ? 'Você concluiu todas as fases da campanha.'
         : _nextObjectiveSubtitle(level, remainingWords);
@@ -465,6 +478,7 @@ class _CampaignPath extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const levels = [GameLevel.easy, GameLevel.medium, GameLevel.hard];
+    var chapterIndex = 0;
 
     return Column(
       children: [
@@ -478,12 +492,27 @@ class _CampaignPath extends StatelessWidget {
           const SizedBox(height: 8),
           RevealOnMount(
             delay: Duration(milliseconds: 90 + (index * 70)),
-            child: _LevelChapter(
-              key: chapterKeys[levels[index]],
-              level: levels[index],
-              campaign: campaign,
-              subStageKeyFor: subStageKeyFor,
-              onProgressChanged: onProgressChanged,
+            child: Column(
+              children: [
+                for (final step in campaignProductionStepsForLevel(
+                  levels[index],
+                )) ...[
+                  _LevelChapter(
+                    key: step.firstStage == 1
+                        ? chapterKeys[levels[index]]
+                        : null,
+                    level: levels[index],
+                    productionStep: step,
+                    chapterIndex: ++chapterIndex,
+                    campaign: campaign,
+                    subStageKeyFor: subStageKeyFor,
+                    onProgressChanged: onProgressChanged,
+                  ),
+                  if (step.lastStage !=
+                      campaign.subStageCountFor(levels[index]))
+                    const SizedBox(height: 10),
+                ],
+              ],
             ),
           ),
           _ChapterConnector(
@@ -574,28 +603,49 @@ class _LevelChapter extends StatelessWidget {
   const _LevelChapter({
     super.key,
     required this.level,
+    required this.productionStep,
+    required this.chapterIndex,
     required this.campaign,
     required this.subStageKeyFor,
     required this.onProgressChanged,
   });
 
   final GameLevel level;
+  final CampaignProductionStep productionStep;
+  final int chapterIndex;
   final _CampaignSnapshot campaign;
   final GlobalKey Function(GameLevel level, int stageNumber) subStageKeyFor;
   final VoidCallback onProgressChanged;
 
   @override
   Widget build(BuildContext context) {
-    final stageCount = campaign.subStageCountFor(level);
+    final totalStages = campaign.subStageCountFor(level);
     final completedStages = campaign.completedSubStagesFor(level);
-    final currentStage = math.min(completedStages + 1, stageCount);
-    final unlocked = campaign.progress.isUnlocked(level);
-    final completed = campaign.progress.isCompleted(level);
-    final percent = campaign.percentFor(level);
+    final currentStage = math.min(completedStages + 1, totalStages);
+    final firstStage = productionStep.firstStage;
+    final lastStage = productionStep.lastStage;
+    final stageCount = productionStep.stageCount;
+    final levelUnlocked = campaign.progress.isUnlocked(level);
+    final unlocked = levelUnlocked && currentStage >= firstStage;
+    final completed =
+        campaign.progress.isCompleted(level) || completedStages >= lastStage;
+    final completedInStep =
+        completedStages.clamp(firstStage - 1, lastStage).toInt() -
+        (firstStage - 1);
+    final percent = ((completedInStep / stageCount) * 100).floor().clamp(
+      0,
+      100,
+    );
     final accent = unlocked ? _chapterAccent(level) : AppTheme.rule;
 
     if (!unlocked) {
-      return _CollapsedLevelChapter(level: level, accent: accent);
+      return _CollapsedLevelChapter(
+        title: productionStep.label,
+        index: chapterIndex,
+        rangeLabel: 'Fases $firstStage-$lastStage',
+        level: level,
+        accent: accent,
+      );
     }
 
     return Material(
@@ -621,7 +671,7 @@ class _LevelChapter extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   _ChapterSeal(
-                    index: _chapterIndex(level),
+                    index: chapterIndex,
                     color: accent,
                     icon: completed
                         ? Icons.done_rounded
@@ -647,7 +697,7 @@ class _LevelChapter extends StatelessWidget {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          _chapterTitle(level),
+                          productionStep.label,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
@@ -662,9 +712,10 @@ class _LevelChapter extends StatelessWidget {
                         ),
                         const SizedBox(height: 5),
                         Text(
-                          unlocked
-                              ? _chapterPreview(level, stageCount)
-                              : _lockedPreview(level),
+                          _productionStepPreview(
+                            level: level,
+                            step: productionStep,
+                          ),
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
@@ -692,13 +743,15 @@ class _LevelChapter extends StatelessWidget {
               ),
               const SizedBox(height: 16),
               _SubStageTrail(
-                stageCount: stageCount,
+                firstStage: firstStage,
+                lastStage: lastStage,
                 completedStages: completedStages,
                 currentStage: currentStage,
                 unlocked: unlocked,
                 completed: completed,
                 accent: accent,
-                itemLabel: _subStageLabel(level),
+                itemLabelForStage: (stageNumber) =>
+                    campaignStageLabelForLevel(level, stageNumber),
                 rankingPositionForStage: (stageNumber) =>
                     campaign.rankingPositionFor(level, stageNumber),
                 keyForStage: (stageNumber) =>
@@ -717,12 +770,16 @@ class _LevelChapter extends StatelessWidget {
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton.icon(
-                  key: ValueKey<String>('stage_${level.name}'),
+                  key: ValueKey<String>(
+                    firstStage == 1
+                        ? 'stage_${level.name}'
+                        : 'stage_${level.name}_$firstStage',
+                  ),
                   onPressed: unlocked
                       ? completed
                             ? () => _startLevel(
                                 context,
-                                stageNumber: 1,
+                                stageNumber: firstStage,
                                 replayStage: true,
                               )
                             : () => _startLevel(context)
@@ -733,9 +790,9 @@ class _LevelChapter extends StatelessWidget {
                   ),
                   label: Text(
                     completed
-                        ? 'Revisitar ${_chapterTitle(level)}'
+                        ? 'Revisitar ${productionStep.label}'
                         : unlocked
-                        ? 'Jogar ${_subStageLabel(level).toLowerCase()} $currentStage de $stageCount'
+                        ? 'Jogar ${productionStep.label.toLowerCase()} $currentStage de $totalStages'
                         : 'Bloqueado',
                   ),
                 ),
@@ -767,7 +824,7 @@ class _LevelChapter extends StatelessWidget {
       builder: (_) => _SubStageActionSheet(
         level: level,
         stageNumber: stageNumber,
-        itemLabel: _subStageLabel(level),
+        itemLabel: campaignStageLabelForLevel(level, stageNumber),
         accent: _chapterAccent(level),
       ),
     );
@@ -815,8 +872,17 @@ class _LevelChapter extends StatelessWidget {
 }
 
 class _CollapsedLevelChapter extends StatelessWidget {
-  const _CollapsedLevelChapter({required this.level, required this.accent});
+  const _CollapsedLevelChapter({
+    required this.title,
+    required this.index,
+    required this.rangeLabel,
+    required this.level,
+    required this.accent,
+  });
 
+  final String title;
+  final int index;
+  final String rangeLabel;
   final GameLevel level;
   final Color accent;
 
@@ -837,23 +903,41 @@ class _CollapsedLevelChapter extends StatelessWidget {
           child: Row(
             children: [
               _ChapterSeal(
-                index: _chapterIndex(level),
+                index: index,
                 color: accent,
                 icon: Icons.lock_rounded,
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: Text(
-                  _chapterTitle(level),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: AppTheme.ink.withValues(alpha: 0.5),
-                    fontSize: 20,
-                    fontWeight: FontWeight.w900,
-                    height: 1,
-                    letterSpacing: 0,
-                  ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: AppTheme.ink.withValues(alpha: 0.5),
+                        fontSize: 20,
+                        fontWeight: FontWeight.w900,
+                        height: 1,
+                        letterSpacing: 0,
+                      ),
+                    ),
+                    const SizedBox(height: 5),
+                    Text(
+                      '${_editionLabel(level)} • $rangeLabel',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: AppTheme.ink.withValues(alpha: 0.45),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w900,
+                        height: 1,
+                      ),
+                    ),
+                  ],
                 ),
               ),
               const SizedBox(width: 10),
@@ -961,31 +1045,34 @@ class _SubStageActionSheet extends StatelessWidget {
 
 class _SubStageTrail extends StatelessWidget {
   const _SubStageTrail({
-    required this.stageCount,
+    required this.firstStage,
+    required this.lastStage,
     required this.completedStages,
     required this.currentStage,
     required this.unlocked,
     required this.completed,
     required this.accent,
-    required this.itemLabel,
+    required this.itemLabelForStage,
     required this.rankingPositionForStage,
     required this.keyForStage,
     required this.onSubStageTap,
   });
 
-  final int stageCount;
+  final int firstStage;
+  final int lastStage;
   final int completedStages;
   final int currentStage;
   final bool unlocked;
   final bool completed;
   final Color accent;
-  final String itemLabel;
+  final String Function(int stageNumber) itemLabelForStage;
   final int? Function(int stageNumber) rankingPositionForStage;
   final GlobalKey Function(int stageNumber) keyForStage;
   final ValueChanged<int> onSubStageTap;
 
   @override
   Widget build(BuildContext context) {
+    final stageCount = lastStage - firstStage + 1;
     return LayoutBuilder(
       builder: (context, constraints) {
         final width = constraints.maxWidth;
@@ -1020,8 +1107,11 @@ class _SubStageTrail extends StatelessWidget {
                       ),
                     ),
                   ),
-                  for (var number = 1; number <= stageCount; number++)
-                    _positionedSubStageDot(number, centers[number - 1]),
+                  for (var number = firstStage; number <= lastStage; number++)
+                    _positionedSubStageDot(
+                      number,
+                      centers[number - firstStage],
+                    ),
                 ],
               ),
             );
@@ -1035,6 +1125,7 @@ class _SubStageTrail extends StatelessWidget {
     final isCurrent = unlocked && !completed && number == currentStage;
     final isCompleted = completed || number <= completedStages;
     final isLocked = !unlocked || (!completed && number > currentStage);
+    final itemLabel = itemLabelForStage(number);
     final width = isCurrent ? 170.0 : 156.0;
     final height = isCurrent ? 58.0 : 52.0;
     final labelSide = number.isOdd
@@ -2065,32 +2156,45 @@ class _FreePlayDock extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 11),
-          const Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
+          Expanded(
+            child: Row(
               children: [
-                Text(
-                  'Pauta Livre',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: AppTheme.midnight,
-                    fontWeight: FontWeight.w900,
-                    fontSize: 17,
-                    height: 1,
+                const Flexible(
+                  child: Text(
+                    'Pauta Livre',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: AppTheme.midnight,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 17,
+                      height: 1,
+                    ),
                   ),
                 ),
-                SizedBox(height: 4),
-                Text(
-                  'Plantão sempre aberto com todos os cadernos',
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: AppTheme.ink,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 12,
-                    height: 1.08,
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppTheme.pressGold.withValues(alpha: 0.14),
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(
+                      color: AppTheme.pressGold.withValues(alpha: 0.28),
+                    ),
+                  ),
+                  child: const Text(
+                    'Jogo rápido',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: AppTheme.pressGold,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 11,
+                      height: 1,
+                    ),
                   ),
                 ),
               ],
@@ -2298,16 +2402,10 @@ class _CampaignSnapshot {
     return ((completedStageCount / total) * 100).floor();
   }
 
-  int totalWordsFor(GameLevel level) => wordBank[level]?.length ?? 0;
+  int totalWordsFor(GameLevel level) =>
+      campaignRequiredWordCountForLevel(level);
 
-  int subStageCountFor(GameLevel level) {
-    final totalWords = totalWordsFor(level);
-    if (totalWords == 0) {
-      return 0;
-    }
-
-    return (totalWords / level.targetWordCount).ceil();
-  }
+  int subStageCountFor(GameLevel level) => campaignStageCountForLevel(level);
 
   int completedSubStagesFor(GameLevel level) {
     final totalWords = totalWordsFor(level);
@@ -2321,7 +2419,11 @@ class _CampaignSnapshot {
       return 0;
     }
 
-    return math.min(stageCount, (usedWords / level.targetWordCount).ceil());
+    if (usedWords >= totalWords) {
+      return stageCount;
+    }
+
+    return math.min(stageCount, usedWords ~/ level.targetWordCount);
   }
 
   int currentSubStageFor(GameLevel level) {
@@ -2383,29 +2485,27 @@ String _chapterTitle(GameLevel level) => switch (level) {
   GameLevel.pautaLivre => 'Pauta Livre',
 };
 
-String _chapterPreview(GameLevel level, int stageCount) => switch (level) {
-  GameLevel.easy => '$stageCount pautas curtas antes da Redação.',
-  GameLevel.medium => '$stageCount matérias para chegar ao Fechamento.',
-  GameLevel.hard => '$stageCount páginas finais antes da Entrega.',
-  GameLevel.pautaLivre => 'Rodada solta com todos os cadernos.',
-};
-
-String _nextObjectivePrefix(GameLevel level) => switch (level) {
-  GameLevel.easy => 'Próxima pauta',
-  GameLevel.medium => 'Próxima matéria',
-  GameLevel.hard => 'Próxima página',
-  GameLevel.pautaLivre => 'Próxima rodada',
-};
+String _productionStepPreview({
+  required GameLevel level,
+  required CampaignProductionStep step,
+}) {
+  final count = step.stageCount;
+  final range = step.firstStage == step.lastStage
+      ? 'fase ${step.firstStage}'
+      : 'fases ${step.firstStage}-${step.lastStage}';
+  final unit = count == 1 ? 'fase' : 'fases';
+  return '$count $unit • $range • ${level.targetWordCount} palavras por fase.';
+}
 
 String _nextObjectiveSubtitle(GameLevel level, int remainingWords) {
   final target = switch (level) {
-    GameLevel.easy => 'abrir Redação',
-    GameLevel.medium => 'abrir Fechamento',
-    GameLevel.hard => 'entregar a edição',
+    GameLevel.easy => 'a Redação',
+    GameLevel.medium => 'o Fechamento',
+    GameLevel.hard => 'a Entrega',
     GameLevel.pautaLivre => 'fechar o plantão',
   };
 
-  return 'Faltam $remainingWords palavras para $target.';
+  return '$remainingWords palavras até $target.';
 }
 
 String _editionLabel(GameLevel level) => switch (level) {
@@ -2413,27 +2513,6 @@ String _editionLabel(GameLevel level) => switch (level) {
   GameLevel.medium => 'Edição 02 • Mesa de redação',
   GameLevel.hard => 'Edição 03 • Fechamento',
   GameLevel.pautaLivre => 'Plantão',
-};
-
-String _subStageLabel(GameLevel level) => switch (level) {
-  GameLevel.easy => 'Página',
-  GameLevel.medium => 'Matéria',
-  GameLevel.hard => 'Prova',
-  GameLevel.pautaLivre => 'Rodada',
-};
-
-String _lockedPreview(GameLevel level) => switch (level) {
-  GameLevel.easy => 'Primeira etapa da redação.',
-  GameLevel.medium => 'Conclua todas as pautas para liberar.',
-  GameLevel.hard => 'Conclua a Redação para liberar.',
-  GameLevel.pautaLivre => 'Sempre disponível.',
-};
-
-int _chapterIndex(GameLevel level) => switch (level) {
-  GameLevel.easy => 1,
-  GameLevel.medium => 2,
-  GameLevel.hard => 3,
-  GameLevel.pautaLivre => 0,
 };
 
 Color _chapterAccent(GameLevel level) => switch (level) {

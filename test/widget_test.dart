@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:jogopalavras/src/app.dart';
+import 'package:jogopalavras/src/game/campaign_stage_rules.dart';
 import 'package:jogopalavras/src/game/game_level.dart';
 import 'package:jogopalavras/src/game/ranking_store.dart';
 import 'package:jogopalavras/src/navigation/app_route_observer.dart';
@@ -44,7 +45,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Mapa da edição'), findsOneWidget);
-    expect(find.text('Pauta'), findsOneWidget);
+    expect(find.text('Pauta'), findsAtLeastNWidgets(1));
     expect(find.text('Pauta Livre'), findsOneWidget);
 
     final easyStage = find.byKey(const ValueKey<String>('stage_easy'));
@@ -64,10 +65,10 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Melhores da fase 1'), findsOneWidget);
-    expect(find.text('Jogar fase 1'), findsOneWidget);
+    expect(find.text('Melhores: Redação 1'), findsOneWidget);
+    expect(find.text('Jogar Redação 1'), findsOneWidget);
 
-    await tester.tap(find.text('Jogar fase 1'));
+    await tester.tap(find.text('Jogar Redação 1'));
     await tester.pumpAndSettle();
 
     expect(find.text('0/8 palavras'), findsOneWidget);
@@ -231,7 +232,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.textContaining('Próxima pauta 1/'), findsOneWidget);
+    expect(find.textContaining('Jogar Pauta 1/'), findsOneWidget);
 
     unawaited(
       navigatorKey.currentState!.push<void>(
@@ -251,7 +252,7 @@ void main() {
     navigatorKey.currentState!.pop();
     await tester.pumpAndSettle();
 
-    expect(find.textContaining('Próxima pauta 2/'), findsOneWidget);
+    expect(find.textContaining('Jogar Pauta 2/'), findsOneWidget);
   });
 
   testWidgets('mapa mostra posição do ranking em fase concluída', (
@@ -277,6 +278,25 @@ void main() {
 
     expect(find.byTooltip('Sua última posição conhecida: #2'), findsOneWidget);
   });
+
+  testWidgets(
+    'mapa libera próximo nível quando progresso antigo já completou',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({
+        'intro_seen_v1': true,
+        'word_progress_used_v1:easy': List<String>.generate(
+          campaignRequiredWordCountForLevel(GameLevel.easy),
+          (index) => 'PALAVRA_$index',
+        ),
+      });
+
+      await tester.pumpWidget(const MaterialApp(home: LevelScreen()));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('Jogar Redação 1/'), findsOneWidget);
+      expect(find.text('Redação'), findsAtLeastNWidgets(1));
+    },
+  );
 
   testWidgets('pauta livre mostra posição conhecida do ranking', (
     tester,

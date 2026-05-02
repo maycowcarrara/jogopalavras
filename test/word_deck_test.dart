@@ -81,6 +81,7 @@ void main() {
       for (final entry in entries) {
         expect(entry.text, isNotEmpty);
         expect(entry.hint, isNotEmpty);
+        expect(entry.extraHint, isNotEmpty);
         expect(
           genericHints,
           isNot(contains(entry.hint)),
@@ -90,6 +91,29 @@ void main() {
           _normalize(entry.hint).contains(_normalize(entry.text)),
           isFalse,
           reason: 'A dica de ${entry.text} entrega a palavra.',
+        );
+      }
+    }
+  });
+
+  test('dicas cabem em até três linhas no painel compacto', () {
+    for (final entries in wordBank.values) {
+      for (final entry in entries) {
+        expect(
+          _wrapsWithinThreeLines(
+            'Nota da redação: ${entry.hint}',
+            maxCharactersPerLine: 30,
+          ),
+          isTrue,
+          reason: 'A dica de ${entry.text} pode passar de 3 linhas.',
+        );
+        expect(
+          _wrapsWithinThreeLines(
+            'Dica extra: ${entry.extraHint}',
+            maxCharactersPerLine: 28,
+          ),
+          isTrue,
+          reason: 'A dica extra de ${entry.text} pode passar de 3 linhas.',
         );
       }
     }
@@ -198,4 +222,32 @@ String _normalize(String value) {
       .replaceAll(RegExp('[ÓÔÕ]'), 'O')
       .replaceAll(RegExp('[Ú]'), 'U')
       .replaceAll(RegExp('[Ç]'), 'C');
+}
+
+bool _wrapsWithinThreeLines(String text, {required int maxCharactersPerLine}) {
+  final words = text.split(RegExp(r'\s+'));
+  var lines = 1;
+  var currentLineLength = 0;
+
+  for (final word in words) {
+    if (word.isEmpty) {
+      continue;
+    }
+
+    if (currentLineLength == 0) {
+      currentLineLength = word.length;
+      continue;
+    }
+
+    final nextLength = currentLineLength + 1 + word.length;
+    if (nextLength <= maxCharactersPerLine) {
+      currentLineLength = nextLength;
+      continue;
+    }
+
+    lines++;
+    currentLineLength = word.length;
+  }
+
+  return lines <= 3;
 }

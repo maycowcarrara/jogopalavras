@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:jogopalavras/src/core/ads/ad_service.dart';
 import 'package:jogopalavras/src/core/audio/game_music_service.dart';
 import 'package:jogopalavras/src/game/campaign_progress_store.dart';
+import 'package:jogopalavras/src/game/campaign_stage_rules.dart';
 import 'package:jogopalavras/src/game/game_level.dart';
 import 'package:jogopalavras/src/game/hint_display_preferences.dart';
 import 'package:jogopalavras/src/game/ranking_store.dart';
@@ -147,34 +148,12 @@ class _InitialsDialogState extends State<_InitialsDialog> {
 int _stageNumberForUsedWords({
   required GameLevel level,
   required int usedWords,
-}) {
-  final totalWords = wordBank[level]?.length ?? 0;
-  if (totalWords == 0) {
-    return 0;
-  }
-
-  final stageCount = (totalWords / level.targetWordCount).ceil();
-  final nextStage = (usedWords / level.targetWordCount).floor() + 1;
-  return nextStage.clamp(1, stageCount).toInt();
-}
+}) => campaignStageNumberForUsedWords(level: level, usedWords: usedWords);
 
 int _targetWordCountForStage({
   required GameLevel level,
   required int stageNumber,
-}) {
-  if (stageNumber <= 0 || level.mixesAllLevels) {
-    return level.targetWordCount;
-  }
-
-  final totalWords = wordBank[level]?.length ?? 0;
-  if (totalWords == 0) {
-    return level.targetWordCount;
-  }
-
-  final wordsBeforeStage = (stageNumber - 1) * level.targetWordCount;
-  final remainingWords = max(1, totalWords - wordsBeforeStage);
-  return min(level.targetWordCount, remainingWords);
-}
+}) => campaignTargetWordCountForStage(level: level, stageNumber: stageNumber);
 
 int _normalizedStageNumberForLevel({
   required GameLevel level,
@@ -191,46 +170,15 @@ int _normalizedStageNumberForLevel({
 List<WordEntry> _wordEntriesForStage({
   required GameLevel level,
   required int stageNumber,
-}) {
-  final entries = wordBank[level] ?? const <WordEntry>[];
-  if (stageNumber <= 0 || level.mixesAllLevels || entries.isEmpty) {
-    return entries;
-  }
+}) => campaignWordEntriesForStage(level: level, stageNumber: stageNumber);
 
-  final start = (stageNumber - 1) * level.targetWordCount;
-  if (start < 0 || start >= entries.length) {
-    return entries;
-  }
-
-  final end = min(start + level.targetWordCount, entries.length);
-  return entries.sublist(start, end);
-}
-
-int _stageCountForLevel(GameLevel level) {
-  if (level.mixesAllLevels) {
-    return 0;
-  }
-
-  final totalWords = wordBank[level]?.length ?? 0;
-  if (totalWords == 0) {
-    return 0;
-  }
-
-  return (totalWords / level.targetWordCount).ceil();
-}
+int _stageCountForLevel(GameLevel level) => campaignStageCountForLevel(level);
 
 String _chapterTitleForLevel(GameLevel level) => switch (level) {
   GameLevel.easy => 'Pauta',
   GameLevel.medium => 'Redação',
   GameLevel.hard => 'Fechamento',
   GameLevel.pautaLivre => 'Pauta Livre',
-};
-
-String _subStageLabelForLevel(GameLevel level) => switch (level) {
-  GameLevel.easy => 'Página',
-  GameLevel.medium => 'Matéria',
-  GameLevel.hard => 'Prova',
-  GameLevel.pautaLivre => 'Rodada',
 };
 
 String _editionLabelForLevel(GameLevel level) => switch (level) {
@@ -242,11 +190,14 @@ String _editionLabelForLevel(GameLevel level) => switch (level) {
 
 class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   static const int _pointsPerSkip = RankingStore.pointsPerSkip;
+  static const int _pointsPerExtraHint = RankingStore.pointsPerHint;
   static const Duration _typewriterTick = Duration(milliseconds: 78);
   static const Duration _hitCelebrationHold = Duration(milliseconds: 900);
 
-  late final Map<GameLevel, WordDeck<WordEntry>> _wordDecks;
-  late final Map<GameLevel, List<WordEntry>> _wordEntriesByLevel;
+  late Map<GameLevel, WordDeck<WordEntry>> _primaryWordDecks;
+  late Map<GameLevel, WordDeck<WordEntry>> _reserveWordDecks;
+  late Map<GameLevel, List<WordEntry>> _primaryWordEntriesByLevel;
+  late Map<GameLevel, List<WordEntry>> _reserveWordEntriesByLevel;
   late final Random _random;
   Timer? _scoreTimer;
 
@@ -256,12 +207,16 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   List<int> _selectedIndices = <int>[];
   List<String> _discoveredWords = <String>[];
   final Set<String> _sessionWords = <String>{};
+  final Set<String> _skippedWords = <String>{};
   String _currentWord = '';
   String _targetWord = '';
   String _currentHint = '';
+  String _currentExtraHint = '';
   late int _score;
   int _errors = 0;
+  int _hintsUsed = 0;
   int _skipsUsed = 0;
+  int _hintPageIndex = 0;
   int _elapsedSeconds = 0;
   int _roundTargetWordCount = 1;
   int _roundStageNumber = 0;
@@ -270,6 +225,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   bool _isHitCelebrating = false;
   bool _isCompletingRound = false;
   bool _isPaused = false;
+  bool _extraHintRevealedForCurrentWord = false;
   bool _exitDialogOpen = false;
   bool _pausedByLifecycle = false;
   String _typedHitWord = '';
@@ -281,23 +237,6 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     _random = Random();
     _score = RankingStore.startingScoreForLevel(widget.level);
-    final replayStageNumber = widget.replayStage
-        ? _normalizedStageNumberForLevel(
-            level: widget.level,
-            stageNumber: widget.stageNumber,
-          )
-        : 0;
-    _wordEntriesByLevel = <GameLevel, List<WordEntry>>{
-      for (final level in widget.level.sourceLevels)
-        level: _wordEntriesForStage(
-          level: level,
-          stageNumber: replayStageNumber,
-        ),
-    };
-    _wordDecks = <GameLevel, WordDeck<WordEntry>>{
-      for (final level in widget.level.sourceLevels)
-        level: WordDeck(_wordEntriesByLevel[level]!, random: _random),
-    };
     unawaited(_prepareGame());
     unawaited(HintDisplayPreferences.instance.initialize());
     _startMusic();
@@ -315,13 +254,14 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       }
 
       _usedWordsByLevel[widget.level] = usedWords;
+      final requiredWords = campaignRequiredWordCountForLevel(widget.level);
       _roundStageNumber = _stageNumberForUsedWords(
         level: widget.level,
         usedWords: usedWords.length,
       );
       _roundTargetWordCount = min(
         widget.level.targetWordCount,
-        max(1, totalWords - usedWords.length),
+        max(1, requiredWords - usedWords.length),
       );
     } else {
       _roundStageNumber = _normalizedStageNumberForLevel(
@@ -334,6 +274,8 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       );
     }
 
+    _prepareWordDecksForRound();
+
     if (!mounted) {
       return;
     }
@@ -343,6 +285,31 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     });
     _generateRound();
     _startScoreTimer();
+  }
+
+  void _prepareWordDecksForRound() {
+    _primaryWordEntriesByLevel = <GameLevel, List<WordEntry>>{
+      for (final level in widget.level.sourceLevels)
+        level: _wordEntriesForStage(
+          level: level,
+          stageNumber: _roundStageNumber,
+        ),
+    };
+    _reserveWordEntriesByLevel = <GameLevel, List<WordEntry>>{
+      for (final level in widget.level.sourceLevels)
+        level: _recordsCampaignProgress
+            ? campaignReserveWordEntriesForLevel(level)
+            : const <WordEntry>[],
+    };
+    _primaryWordDecks = <GameLevel, WordDeck<WordEntry>>{
+      for (final level in widget.level.sourceLevels)
+        level: WordDeck(_primaryWordEntriesByLevel[level]!, random: _random),
+    };
+    _reserveWordDecks = <GameLevel, WordDeck<WordEntry>>{
+      for (final level in widget.level.sourceLevels)
+        if (_reserveWordEntriesByLevel[level]!.isNotEmpty)
+          level: WordDeck(_reserveWordEntriesByLevel[level]!, random: _random),
+    };
   }
 
   @override
@@ -374,6 +341,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       words: _discoveredWords.length,
       elapsedSeconds: _elapsedSeconds,
       errors: _errors,
+      hintsUsed: _hintsUsed,
       skipsUsed: _skipsUsed,
     );
   }
@@ -431,8 +399,11 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     await GameMusicService.instance.resume(widget.level);
   }
 
-  void _generateRound({String? avoidWord}) {
-    final nextEntry = _nextWordEntry(avoidWord: avoidWord);
+  void _generateRound({String? avoidWord, bool preferReserve = false}) {
+    final nextEntry = _nextWordEntry(
+      avoidWord: avoidWord,
+      preferReserve: preferReserve,
+    );
     final nextWord = nextEntry.text;
     _sessionWords.add(nextWord);
     final totalCells = widget.level.gridSize * widget.level.gridSize;
@@ -447,6 +418,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     setState(() {
       _targetWord = nextWord;
       _currentHint = nextEntry.hint;
+      _currentExtraHint = nextEntry.extraHint;
       _grid = nextGrid;
       _selectedIndices = <int>[];
       _currentWord = '';
@@ -454,44 +426,137 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       _hasError = false;
       _isHitCelebrating = false;
       _typedHitWord = '';
+      _hintPageIndex = 0;
+      _extraHintRevealedForCurrentWord = false;
     });
   }
 
-  WordEntry _nextWordEntry({String? avoidWord}) {
+  void _setHintPage(int pageIndex) {
+    if (_hintPageIndex == pageIndex) {
+      return;
+    }
+
+    setState(() {
+      _hintPageIndex = pageIndex;
+    });
+  }
+
+  void _showExtraHint() {
+    if (_isPaused || _isHitCelebrating) {
+      return;
+    }
+
+    setState(() {
+      if (!_extraHintRevealedForCurrentWord) {
+        _hintsUsed += 1;
+        _extraHintRevealedForCurrentWord = true;
+      }
+      _hintPageIndex = 1;
+      _score = _scoreFromStats();
+    });
+  }
+
+  WordEntry _nextWordEntry({String? avoidWord, bool preferReserve = false}) {
     final sourceLevel = _sourceLevelForNextWord();
     final usedWords = _usedWordsByLevel[sourceLevel] ?? const <String>{};
 
-    bool isFreshCandidate(WordEntry entry) =>
-        !_sessionWords.contains(entry.text) && !usedWords.contains(entry.text);
+    bool isUnusedCandidate(WordEntry entry) =>
+        !_sessionWords.contains(entry.text) &&
+        !usedWords.contains(entry.text) &&
+        !_skippedWords.contains(entry.text);
 
-    if (_hasWordCandidate(sourceLevel, isFreshCandidate)) {
-      return _wordDecks[sourceLevel]!.nextWhere(isFreshCandidate);
+    if (preferReserve &&
+        _hasReserveWordCandidate(sourceLevel, isUnusedCandidate)) {
+      return _reserveWordDecks[sourceLevel]!.nextWhere(isUnusedCandidate);
+    }
+
+    if (_hasPrimaryWordCandidate(sourceLevel, isUnusedCandidate)) {
+      return _primaryWordDecks[sourceLevel]!.nextWhere(isUnusedCandidate);
+    }
+
+    if (_hasReserveWordCandidate(sourceLevel, isUnusedCandidate)) {
+      return _reserveWordDecks[sourceLevel]!.nextWhere(isUnusedCandidate);
     }
 
     bool isSkippedCandidate(WordEntry entry) =>
         !_discoveredWords.contains(entry.text) &&
         !usedWords.contains(entry.text) &&
+        !_skippedWords.contains(entry.text) &&
         entry.text != avoidWord;
 
-    if (_hasWordCandidate(sourceLevel, isSkippedCandidate)) {
-      return _wordDecks[sourceLevel]!.nextWhere(isSkippedCandidate);
+    if (preferReserve &&
+        _hasReserveWordCandidate(sourceLevel, isSkippedCandidate)) {
+      return _reserveWordDecks[sourceLevel]!.nextWhere(isSkippedCandidate);
+    }
+
+    if (_hasPrimaryWordCandidate(sourceLevel, isSkippedCandidate)) {
+      return _primaryWordDecks[sourceLevel]!.nextWhere(isSkippedCandidate);
+    }
+
+    if (_hasReserveWordCandidate(sourceLevel, isSkippedCandidate)) {
+      return _reserveWordDecks[sourceLevel]!.nextWhere(isSkippedCandidate);
     }
 
     bool isAnyUnsolvedCandidate(WordEntry entry) =>
         !_discoveredWords.contains(entry.text) &&
-        !usedWords.contains(entry.text);
+        !usedWords.contains(entry.text) &&
+        !_skippedWords.contains(entry.text);
 
-    if (_hasWordCandidate(sourceLevel, isAnyUnsolvedCandidate)) {
-      return _wordDecks[sourceLevel]!.nextWhere(isAnyUnsolvedCandidate);
+    if (preferReserve &&
+        _hasReserveWordCandidate(sourceLevel, isAnyUnsolvedCandidate)) {
+      return _reserveWordDecks[sourceLevel]!.nextWhere(isAnyUnsolvedCandidate);
     }
 
-    return _wordDecks[sourceLevel]!.nextWhere(
-      (entry) => !usedWords.contains(entry.text),
+    if (_hasPrimaryWordCandidate(sourceLevel, isAnyUnsolvedCandidate)) {
+      return _primaryWordDecks[sourceLevel]!.nextWhere(isAnyUnsolvedCandidate);
+    }
+
+    if (_hasReserveWordCandidate(sourceLevel, isAnyUnsolvedCandidate)) {
+      return _reserveWordDecks[sourceLevel]!.nextWhere(isAnyUnsolvedCandidate);
+    }
+
+    final fallbackDeck =
+        _reserveWordDecks[sourceLevel] ?? _primaryWordDecks[sourceLevel]!;
+    return fallbackDeck.nextWhere(
+      (entry) =>
+          !usedWords.contains(entry.text) &&
+          !_skippedWords.contains(entry.text),
     );
   }
 
-  bool _hasWordCandidate(GameLevel level, bool Function(WordEntry entry) test) {
-    return _wordEntriesByLevel[level]!.any(test);
+  bool _hasPrimaryWordCandidate(
+    GameLevel level,
+    bool Function(WordEntry entry) test,
+  ) {
+    return _primaryWordEntriesByLevel[level]!.any(test);
+  }
+
+  bool _hasReserveWordCandidate(
+    GameLevel level,
+    bool Function(WordEntry entry) test,
+  ) {
+    return _reserveWordEntriesByLevel[level]!.any(test);
+  }
+
+  bool _hasReplacementWordAfterSkip(String skippedWord) {
+    for (final level in widget.level.sourceLevels) {
+      final usedWords = _usedWordsByLevel[level] ?? const <String>{};
+      final replacementEntries = _recordsCampaignProgress
+          ? _reserveWordEntriesByLevel[level]!
+          : _primaryWordEntriesByLevel[level]!;
+      final hasReplacement = replacementEntries.any(
+        (entry) =>
+            entry.text != skippedWord &&
+            !_discoveredWords.contains(entry.text) &&
+            !usedWords.contains(entry.text) &&
+            !_skippedWords.contains(entry.text),
+      );
+      if (hasReplacement) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
   bool get _recordsCampaignProgress =>
@@ -545,11 +610,37 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       return;
     }
 
+    final skippedWord = _targetWord;
+    if (!_hasReplacementWordAfterSkip(skippedWord)) {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          const SnackBar(
+            content: Text('Sem palavra reserva para substituir esta rodada.'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      return;
+    }
+
+    if (_recordsCampaignProgress) {
+      final usedWords = await WordProgressStore.instance.markWordsUsed(
+        widget.level,
+        [skippedWord],
+      );
+      _usedWordsByLevel[widget.level] = usedWords;
+    }
+
+    if (!mounted) {
+      return;
+    }
+
     setState(() {
+      _skippedWords.add(skippedWord);
       _skipsUsed += 1;
       _score = _scoreFromStats();
     });
-    _generateRound(avoidWord: _targetWord);
+    _generateRound(avoidWord: skippedWord, preferReserve: true);
   }
 
   Future<void> _confirmExitGame() async {
@@ -660,7 +751,8 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
             _discoveredWords,
           );
           final levelCompleted =
-              usedWords.length >= wordBank[widget.level]!.length;
+              usedWords.length >=
+              campaignRequiredWordCountForLevel(widget.level);
           if (levelCompleted) {
             completedLevel = widget.level;
             completedGame = widget.level == GameLevel.hard;
@@ -749,6 +841,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       elapsedSeconds: _elapsedSeconds,
       completedAt: DateTime.now(),
       errors: _errors,
+      hintsUsed: _hintsUsed,
       skipsUsed: _skipsUsed,
     );
 
@@ -796,6 +889,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       elapsedSeconds: completedEntry.elapsedSeconds,
       completedAt: completedEntry.completedAt,
       errors: completedEntry.errors,
+      hintsUsed: completedEntry.hintsUsed,
       skipsUsed: completedEntry.skipsUsed,
     );
   }
@@ -1047,8 +1141,15 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                                         child: _RoundActionPanel(
                                           level: widget.level,
                                           hint: _currentHint,
+                                          extraHint: _currentExtraHint,
+                                          hintPageIndex: _hintPageIndex,
+                                          extraHintRevealed:
+                                              _extraHintRevealedForCurrentWord,
+                                          extraHintPenalty: _pointsPerExtraHint,
                                           skipPenalty: _pointsPerSkip,
                                           compact: layout.compact,
+                                          onHintPageChanged: _setHintPage,
+                                          onShowExtraHint: _showExtraHint,
                                           onSkipWord: _skipWord,
                                         ),
                                       ),
@@ -1097,7 +1198,7 @@ class _LevelIdentityBar extends StatelessWidget {
     final chapterTitle = _chapterTitleForLevel(level);
     final stageLabel = level.mixesAllLevels || stageNumber <= 0
         ? 'Rodada solta'
-        : '${_subStageLabelForLevel(level)} $stageNumber/$stageCount';
+        : '${campaignStageLabelForLevel(level, stageNumber)} $stageNumber/$stageCount';
     final subtitle = replayStage
         ? 'Revisão do arquivo • $targetWordCount palavras'
         : '$stageLabel • $discoveredCount/$targetWordCount palavras';
@@ -1495,15 +1596,27 @@ class _RoundActionPanel extends StatelessWidget {
   const _RoundActionPanel({
     required this.level,
     required this.hint,
+    required this.extraHint,
+    required this.hintPageIndex,
+    required this.extraHintRevealed,
+    required this.extraHintPenalty,
     required this.skipPenalty,
     required this.compact,
+    required this.onHintPageChanged,
+    required this.onShowExtraHint,
     required this.onSkipWord,
   });
 
   final GameLevel level;
   final String hint;
+  final String extraHint;
+  final int hintPageIndex;
+  final bool extraHintRevealed;
+  final int extraHintPenalty;
   final int skipPenalty;
   final bool compact;
+  final ValueChanged<int> onHintPageChanged;
+  final VoidCallback onShowExtraHint;
   final VoidCallback onSkipWord;
 
   @override
@@ -1534,15 +1647,22 @@ class _RoundActionPanel extends StatelessWidget {
             _HintPanel(
               level: level,
               hint: hint,
+              extraHint: extraHint,
+              hintPageIndex: hintPageIndex,
+              extraHintRevealed: extraHintRevealed,
               compact: compact,
               accent: level.accent,
+              onHintPageChanged: onHintPageChanged,
             ),
             SizedBox(height: compact ? 8 : 10),
-            _SkipWordButton(
-              penalty: skipPenalty,
+            _RoundActionButtons(
+              extraHintPenalty: extraHintPenalty,
+              extraHintRevealed: extraHintRevealed,
+              skipPenalty: skipPenalty,
               dense: compact,
               compact: compact,
-              onPressed: onSkipWord,
+              onShowExtraHint: onShowExtraHint,
+              onSkipWord: onSkipWord,
             ),
           ],
         ),
@@ -1691,17 +1811,29 @@ class _HintPanel extends StatelessWidget {
   const _HintPanel({
     required this.level,
     required this.hint,
+    required this.extraHint,
+    required this.hintPageIndex,
+    required this.extraHintRevealed,
     required this.compact,
     required this.accent,
+    required this.onHintPageChanged,
   });
 
   final GameLevel level;
   final String hint;
+  final String extraHint;
+  final int hintPageIndex;
+  final bool extraHintRevealed;
   final bool compact;
   final Color accent;
+  final ValueChanged<int> onHintPageChanged;
 
   @override
   Widget build(BuildContext context) {
+    final showingExtraHint = hintPageIndex == 1;
+    final displayedHint = showingExtraHint ? extraHint : hint;
+    final hintLabel = showingExtraHint ? 'Dica extra' : 'Nota da redação';
+
     return SizedBox(
       width: double.infinity,
       child: Container(
@@ -1718,7 +1850,9 @@ class _HintPanel extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Icon(
-              Icons.article_outlined,
+              showingExtraHint
+                  ? Icons.lightbulb_outline_rounded
+                  : Icons.article_outlined,
               color: accent,
               size: compact ? 16 : 17,
             ),
@@ -1735,7 +1869,7 @@ class _HintPanel extends StatelessWidget {
                   );
                   if (mode == HintDisplayMode.dicaAberta) {
                     return Text(
-                      'Nota da redação: $hint',
+                      '$hintLabel: $displayedHint',
                       maxLines: 3,
                       overflow: TextOverflow.visible,
                       style: style,
@@ -1744,7 +1878,8 @@ class _HintPanel extends StatelessWidget {
 
                   return _FlickeringHintText(
                     level: level,
-                    hint: hint,
+                    hint: displayedHint,
+                    label: hintLabel,
                     maxLines: 3,
                     style: style,
                   );
@@ -1752,6 +1887,14 @@ class _HintPanel extends StatelessWidget {
                 child: const SizedBox.shrink(),
               ),
             ),
+            if (showingExtraHint) ...[
+              const SizedBox(width: 6),
+              _HintPageButton(
+                icon: Icons.chevron_left_rounded,
+                tooltip: 'Voltar para a dica principal',
+                onPressed: () => onHintPageChanged(0),
+              ),
+            ],
           ],
         ),
       ),
@@ -1763,12 +1906,14 @@ class _FlickeringHintText extends StatefulWidget {
   const _FlickeringHintText({
     required this.level,
     required this.hint,
+    required this.label,
     required this.maxLines,
     required this.style,
   });
 
   final GameLevel level;
   final String hint;
+  final String label;
   final int maxLines;
   final TextStyle style;
 
@@ -1803,7 +1948,9 @@ class _FlickeringHintTextState extends State<_FlickeringHintText> {
   @override
   void didUpdateWidget(covariant _FlickeringHintText oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.hint != widget.hint || oldWidget.level != widget.level) {
+    if (oldWidget.hint != widget.hint ||
+        oldWidget.label != widget.label ||
+        oldWidget.level != widget.level) {
       _resetHintAnimation();
     }
   }
@@ -1818,7 +1965,7 @@ class _FlickeringHintTextState extends State<_FlickeringHintText> {
   Widget build(BuildContext context) {
     final baseColor = widget.style.color ?? AppTheme.midnight;
     return Semantics(
-      label: 'Nota da redação: ${widget.hint}',
+      label: '${widget.label}: ${widget.hint}',
       child: ExcludeSemantics(
         child: Text.rich(
           TextSpan(style: widget.style, children: _buildHintSpans(baseColor)),
@@ -1832,7 +1979,7 @@ class _FlickeringHintTextState extends State<_FlickeringHintText> {
   List<InlineSpan> _buildHintSpans(Color baseColor) {
     var wordIndex = 0;
     return [
-      const TextSpan(text: 'Nota da redação: '),
+      TextSpan(text: '${widget.label}: '),
       for (final token
           in widget.hint
               .splitMapJoin(
@@ -2044,6 +2191,115 @@ class _HintWordReveal {
   int holdUntil = 0;
 }
 
+class _HintPageButton extends StatelessWidget {
+  const _HintPageButton({
+    required this.icon,
+    required this.tooltip,
+    required this.onPressed,
+  });
+
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: IconButton(
+        onPressed: onPressed,
+        icon: Icon(icon, size: 19),
+        color: AppTheme.midnight,
+        visualDensity: VisualDensity.compact,
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints.tightFor(width: 28, height: 28),
+      ),
+    );
+  }
+}
+
+class _RoundActionButtons extends StatelessWidget {
+  const _RoundActionButtons({
+    required this.extraHintPenalty,
+    required this.extraHintRevealed,
+    required this.skipPenalty,
+    required this.dense,
+    required this.compact,
+    required this.onShowExtraHint,
+    required this.onSkipWord,
+  });
+
+  final int extraHintPenalty;
+  final bool extraHintRevealed;
+  final int skipPenalty;
+  final bool dense;
+  final bool compact;
+  final VoidCallback onShowExtraHint;
+  final VoidCallback onSkipWord;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: _ExtraHintButton(
+            penalty: extraHintPenalty,
+            revealed: extraHintRevealed,
+            dense: dense,
+            compact: compact,
+            onPressed: onShowExtraHint,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: _SkipWordButton(
+            penalty: skipPenalty,
+            dense: dense,
+            compact: compact,
+            onPressed: onSkipWord,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ExtraHintButton extends StatelessWidget {
+  const _ExtraHintButton({
+    required this.penalty,
+    required this.revealed,
+    required this.dense,
+    required this.compact,
+    required this.onPressed,
+  });
+
+  final int penalty;
+  final bool revealed;
+  final bool dense;
+  final bool compact;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return OutlinedButton.icon(
+      onPressed: onPressed,
+      icon: Icon(Icons.lightbulb_outline_rounded, size: dense ? 18 : 19),
+      label: Text(
+        revealed ? 'Ver extra' : 'Dica extra  -$penalty pts',
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+      style: _roundActionButtonStyle(
+        foregroundColor: AppTheme.ink,
+        backgroundColor: AppTheme.ink.withValues(alpha: 0.075),
+        borderColor: AppTheme.ink.withValues(alpha: 0.42),
+        dense: dense,
+        compact: compact,
+      ),
+    );
+  }
+}
+
 class _SkipWordButton extends StatelessWidget {
   const _SkipWordButton({
     required this.penalty,
@@ -2063,34 +2319,50 @@ class _SkipWordButton extends StatelessWidget {
       onPressed: onPressed,
       icon: Icon(Icons.skip_next_rounded, size: dense ? 19 : 20),
       label: Text(
-        'Pular palavra  -$penalty pts',
+        'Pular  -$penalty pts',
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
       ),
-      style: OutlinedButton.styleFrom(
+      style: _roundActionButtonStyle(
         foregroundColor: AppTheme.pressRed,
         backgroundColor: AppTheme.pressRed.withValues(alpha: 0.075),
-        side: BorderSide(color: AppTheme.pressRed.withValues(alpha: 0.5)),
-        visualDensity: VisualDensity.compact,
-        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        minimumSize: Size(double.infinity, dense ? 50 : 54),
-        padding: EdgeInsets.symmetric(
-          horizontal: dense ? 18 : 20,
-          vertical: dense ? 13 : 14,
-        ),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(9)),
-        textStyle: TextStyle(
-          fontWeight: FontWeight.w900,
-          fontSize: dense
-              ? 13
-              : compact
-              ? 14
-              : 15,
-          letterSpacing: 0,
-        ),
+        borderColor: AppTheme.pressRed.withValues(alpha: 0.5),
+        dense: dense,
+        compact: compact,
       ),
     );
   }
+}
+
+ButtonStyle _roundActionButtonStyle({
+  required Color foregroundColor,
+  required Color backgroundColor,
+  required Color borderColor,
+  required bool dense,
+  required bool compact,
+}) {
+  return OutlinedButton.styleFrom(
+    foregroundColor: foregroundColor,
+    backgroundColor: backgroundColor,
+    side: BorderSide(color: borderColor),
+    visualDensity: VisualDensity.compact,
+    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+    minimumSize: Size(double.infinity, dense ? 50 : 54),
+    padding: EdgeInsets.symmetric(
+      horizontal: dense ? 8 : 10,
+      vertical: dense ? 13 : 14,
+    ),
+    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(9)),
+    textStyle: TextStyle(
+      fontWeight: FontWeight.w900,
+      fontSize: dense
+          ? 12
+          : compact
+          ? 12.5
+          : 13.5,
+      letterSpacing: 0,
+    ),
+  );
 }
 
 class _GridBoard extends StatelessWidget {

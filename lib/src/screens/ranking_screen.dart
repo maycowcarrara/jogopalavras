@@ -1,5 +1,8 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
+import 'package:jogopalavras/src/game/campaign_stage_rules.dart';
 import 'package:jogopalavras/src/game/game_level.dart';
 import 'package:jogopalavras/src/game/ranking_store.dart';
 import 'package:jogopalavras/src/navigation/app_page_route.dart';
@@ -39,35 +42,42 @@ class RankingScreen extends StatelessWidget {
     final singleLevel =
         initialStageNumber != null || initialLevel == GameLevel.pautaLivre;
     final selectedLevel = initialLevel ?? GameLevel.easy;
+    final showStageCelebration = _shouldShowStageCelebration(highlightEntry);
+    final celebrationAccent =
+        highlightEntry?.level.accent ?? selectedLevel.accent;
 
     if (singleLevel) {
-      return Scaffold(
-        appBar: AppBar(
-          title: const Text(
-            'Ranking',
-            style: TextStyle(fontWeight: FontWeight.w900),
+      return _StageCelebrationShell(
+        show: showStageCelebration,
+        accent: celebrationAccent,
+        child: Scaffold(
+          appBar: AppBar(
+            title: const Text(
+              'Ranking',
+              style: TextStyle(fontWeight: FontWeight.w900),
+            ),
+            actions: const [_RankingOptionsAction()],
           ),
-          actions: const [_RankingOptionsAction()],
-        ),
-        bottomNavigationBar: const AdBannerSlot(
-          adSize: AdSize.largeBanner,
-          safeAreaMinimum: EdgeInsets.fromLTRB(18, 0, 18, 12),
-        ),
-        body: AppBackdrop(
-          primary: AppTheme.pressBlue,
-          secondary: AppTheme.pressRed,
-          showOptionsControl: false,
-          child: SafeArea(
-            top: false,
-            child: _RankingLevelView(
-              level: selectedLevel,
-              stageNumber: highlightEntry?.stageNumber ?? initialStageNumber,
-              highlightEntry: highlightEntry,
-              initialEntries: initialEntries,
-              initialResult: initialResult,
-              continueLevel: continueLevel,
-              completedLevel: completedLevel,
-              completedGame: completedGame,
+          bottomNavigationBar: const AdBannerSlot(
+            adSize: AdSize.largeBanner,
+            safeAreaMinimum: EdgeInsets.fromLTRB(18, 0, 18, 12),
+          ),
+          body: AppBackdrop(
+            primary: AppTheme.pressBlue,
+            secondary: AppTheme.pressRed,
+            showOptionsControl: false,
+            child: SafeArea(
+              top: false,
+              child: _RankingLevelView(
+                level: selectedLevel,
+                stageNumber: highlightEntry?.stageNumber ?? initialStageNumber,
+                highlightEntry: highlightEntry,
+                initialEntries: initialEntries,
+                initialResult: initialResult,
+                continueLevel: continueLevel,
+                completedLevel: completedLevel,
+                completedGame: completedGame,
+              ),
             ),
           ),
         ),
@@ -77,62 +87,102 @@ class RankingScreen extends StatelessWidget {
     return DefaultTabController(
       length: GameLevel.values.length,
       initialIndex: initialIndex,
-      child: Scaffold(
-        appBar: AppBar(
-          title: const Text(
-            'Ranking',
-            style: TextStyle(fontWeight: FontWeight.w900),
-          ),
-          actions: const [_RankingOptionsAction()],
-          bottom: TabBar(
-            labelColor: AppTheme.midnight,
-            indicatorColor: AppTheme.pressRed,
-            tabs: [
-              for (final level in GameLevel.values) Tab(text: level.title),
-            ],
-          ),
-        ),
-        bottomNavigationBar: const AdBannerSlot(
-          adSize: AdSize.largeBanner,
-          safeAreaMinimum: EdgeInsets.fromLTRB(18, 0, 18, 12),
-        ),
-        body: AppBackdrop(
-          primary: AppTheme.pressBlue,
-          secondary: AppTheme.pressRed,
-          showOptionsControl: false,
-          child: SafeArea(
-            top: false,
-            child: TabBarView(
-              children: [
-                for (final level in GameLevel.values)
-                  _RankingLevelView(
-                    level: level,
-                    stageNumber: highlightEntry?.level == level
-                        ? highlightEntry!.stageNumber
-                        : initialStageNumber,
-                    highlightEntry: highlightEntry?.level == level
-                        ? highlightEntry
-                        : null,
-                    initialEntries: highlightEntry?.level == level
-                        ? initialEntries
-                        : null,
-                    initialResult: highlightEntry?.level == level
-                        ? initialResult
-                        : null,
-                    continueLevel: highlightEntry?.level == level
-                        ? continueLevel
-                        : null,
-                    completedLevel: highlightEntry?.level == level
-                        ? completedLevel
-                        : null,
-                    completedGame:
-                        highlightEntry?.level == level && completedGame,
-                  ),
+      child: _StageCelebrationShell(
+        show: showStageCelebration,
+        accent: celebrationAccent,
+        child: Scaffold(
+          appBar: AppBar(
+            title: const Text(
+              'Ranking',
+              style: TextStyle(fontWeight: FontWeight.w900),
+            ),
+            actions: const [_RankingOptionsAction()],
+            bottom: TabBar(
+              labelColor: AppTheme.midnight,
+              indicatorColor: AppTheme.pressRed,
+              tabs: [
+                for (final level in GameLevel.values) Tab(text: level.title),
               ],
+            ),
+          ),
+          bottomNavigationBar: const AdBannerSlot(
+            adSize: AdSize.largeBanner,
+            safeAreaMinimum: EdgeInsets.fromLTRB(18, 0, 18, 12),
+          ),
+          body: AppBackdrop(
+            primary: AppTheme.pressBlue,
+            secondary: AppTheme.pressRed,
+            showOptionsControl: false,
+            child: SafeArea(
+              top: false,
+              child: TabBarView(
+                children: [
+                  for (final level in GameLevel.values)
+                    _RankingLevelView(
+                      level: level,
+                      stageNumber: highlightEntry?.level == level
+                          ? highlightEntry!.stageNumber
+                          : initialStageNumber,
+                      highlightEntry: highlightEntry?.level == level
+                          ? highlightEntry
+                          : null,
+                      initialEntries: highlightEntry?.level == level
+                          ? initialEntries
+                          : null,
+                      initialResult: highlightEntry?.level == level
+                          ? initialResult
+                          : null,
+                      continueLevel: highlightEntry?.level == level
+                          ? continueLevel
+                          : null,
+                      completedLevel: highlightEntry?.level == level
+                          ? completedLevel
+                          : null,
+                      completedGame:
+                          highlightEntry?.level == level && completedGame,
+                    ),
+                ],
+              ),
             ),
           ),
         ),
       ),
+    );
+  }
+}
+
+bool _shouldShowStageCelebration(RankingEntry? entry) {
+  if (entry == null || entry.level.mixesAllLevels || entry.stageNumber <= 0) {
+    return false;
+  }
+
+  return campaignProductionStepsForLevel(
+    entry.level,
+  ).any((step) => step.lastStage == entry.stageNumber);
+}
+
+class _StageCelebrationShell extends StatelessWidget {
+  const _StageCelebrationShell({
+    required this.show,
+    required this.accent,
+    required this.child,
+  });
+
+  final bool show;
+  final Color accent;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!show) {
+      return child;
+    }
+
+    return Stack(
+      children: [
+        child,
+        Positioned.fill(child: _StageCompletionConfetti(accent: accent)),
+      ],
     );
   }
 }
@@ -435,6 +485,10 @@ class _RankingHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final stageLabel =
+        stageNumber != null && stageNumber! > 0 && level != GameLevel.pautaLivre
+        ? campaignStageLabelForLevel(level, stageNumber!)
+        : null;
     final resultText = highlightEntry == null
         ? level == GameLevel.pautaLivre && stageNumber == null
               ? 'Ranking geral do plantão: menos palavras e menor tempo.'
@@ -489,8 +543,8 @@ class _RankingHeader extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      stageNumber != null && stageNumber! > 0
-                          ? 'Melhores da fase $stageNumber'
+                      stageLabel != null
+                          ? 'Melhores: $stageLabel $stageNumber'
                           : level == GameLevel.pautaLivre
                           ? 'Melhores do Plantão'
                           : 'Melhores em ${level.title.toLowerCase()}',
@@ -546,8 +600,8 @@ class _RankingHeader extends StatelessWidget {
                         icon: const Icon(Icons.play_arrow_rounded, size: 20),
                         label: Text(
                           highlightEntry == null
-                              ? stageNumber != null && stageNumber! > 0
-                                    ? 'Jogar fase $stageNumber'
+                              ? stageLabel != null
+                                    ? 'Jogar $stageLabel $stageNumber'
                                     : 'Jogar no ${level.title.toLowerCase()}'
                               : continueLevel == null || continueLevel == level
                               ? 'Continuar fase'
@@ -563,6 +617,128 @@ class _RankingHeader extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+class _StageCompletionConfetti extends StatefulWidget {
+  const _StageCompletionConfetti({required this.accent});
+
+  final Color accent;
+
+  @override
+  State<_StageCompletionConfetti> createState() =>
+      _StageCompletionConfettiState();
+}
+
+class _StageCompletionConfettiState extends State<_StageCompletionConfetti>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 2800),
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    _controller.forward();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final reduceMotion =
+        MediaQuery.maybeOf(context)?.disableAnimations ?? false;
+    if (reduceMotion) {
+      return IgnorePointer(
+        child: CustomPaint(
+          painter: _StageCompletionConfettiPainter(
+            progress: 0.62,
+            accent: widget.accent,
+          ),
+        ),
+      );
+    }
+
+    return IgnorePointer(
+      child: AnimatedBuilder(
+        animation: _controller,
+        builder: (context, _) {
+          return CustomPaint(
+            painter: _StageCompletionConfettiPainter(
+              progress: Curves.easeOutCubic.transform(_controller.value),
+              accent: widget.accent,
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _StageCompletionConfettiPainter extends CustomPainter {
+  const _StageCompletionConfettiPainter({
+    required this.progress,
+    required this.accent,
+  });
+
+  final double progress;
+  final Color accent;
+
+  static const _pieceCount = 96;
+  static const _palette = [
+    AppTheme.pressGold,
+    AppTheme.pressRed,
+    AppTheme.pressBlue,
+    AppTheme.pressGreen,
+    Colors.white,
+  ];
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (size.isEmpty) {
+      return;
+    }
+
+    final fade = (1 - ((progress - 0.82) / 0.18).clamp(0.0, 1.0)).toDouble();
+    final random = math.Random(7);
+    for (var index = 0; index < _pieceCount; index++) {
+      final startX = random.nextDouble() * size.width;
+      final drift = (random.nextDouble() - 0.5) * 120;
+      final fall = 40 + (random.nextDouble() * size.height * 1.08);
+      final x = startX + (drift * progress);
+      final y = -14 + (fall * progress);
+      final width = 5 + random.nextDouble() * 7;
+      final height = 8 + random.nextDouble() * 11;
+      final rotation = (random.nextDouble() * math.pi) + (progress * math.pi);
+      final color = index % 5 == 0 ? accent : _palette[index % _palette.length];
+
+      final paint = Paint()
+        ..color = color.withValues(alpha: 0.86 * fade)
+        ..style = PaintingStyle.fill;
+
+      canvas
+        ..save()
+        ..translate(x, y)
+        ..rotate(rotation)
+        ..drawRRect(
+          RRect.fromRectAndRadius(
+            Rect.fromCenter(center: Offset.zero, width: width, height: height),
+            const Radius.circular(1.5),
+          ),
+          paint,
+        )
+        ..restore();
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _StageCompletionConfettiPainter oldDelegate) {
+    return oldDelegate.progress != progress || oldDelegate.accent != accent;
   }
 }
 

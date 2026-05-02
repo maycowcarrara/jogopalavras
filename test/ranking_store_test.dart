@@ -114,7 +114,7 @@ void main() {
     );
   });
 
-  test('recalcula pontuacao com penalidade de pulos', () {
+  test('recalcula pontuacao com penalidade de dicas extras e pulos', () {
     final scoreWithoutHint = RankingStore.scoreForPerformance(
       level: GameLevel.easy,
       words: 10,
@@ -127,7 +127,7 @@ void main() {
       hintsUsed: 1,
     );
 
-    expect(scoreWithHint, scoreWithoutHint);
+    expect(scoreWithHint, scoreWithoutHint - RankingStore.pointsPerHint);
 
     final scoreWithSkip = RankingStore.scoreForPerformance(
       level: GameLevel.easy,
@@ -137,7 +137,12 @@ void main() {
       skipsUsed: 1,
     );
 
-    expect(scoreWithSkip, scoreWithoutHint - RankingStore.pointsPerSkip);
+    expect(
+      scoreWithSkip,
+      scoreWithoutHint -
+          RankingStore.pointsPerHint -
+          RankingStore.pointsPerSkip,
+    );
 
     final entry = RankingEntry.fromJson(<String, Object?>{
       'initials': 'MRC',

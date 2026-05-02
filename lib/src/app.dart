@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:jogopalavras/src/core/audio/game_music_service.dart';
 import 'package:jogopalavras/src/core/errors/app_error_reporter.dart';
+import 'package:jogopalavras/src/core/updates/app_update_service.dart';
 import 'package:jogopalavras/src/game/intro_preferences.dart';
 import 'package:jogopalavras/src/navigation/app_route_observer.dart';
 import 'package:jogopalavras/src/screens/intro_screen.dart';
@@ -23,6 +26,7 @@ class _WordMazeAppState extends State<WordMazeApp> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _startAppMusic();
+    unawaited(AppUpdateService.instance.checkForImmediateUpdate());
   }
 
   @override
@@ -35,6 +39,11 @@ class _WordMazeAppState extends State<WordMazeApp> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       _startAppMusic();
+      unawaited(
+        AppUpdateService.instance.checkForImmediateUpdate(
+          allowNewPrompt: false,
+        ),
+      );
       return;
     }
 
