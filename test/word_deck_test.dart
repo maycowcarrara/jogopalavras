@@ -41,6 +41,17 @@ void main() {
     expect(deck.nextWhere((word) => word != 'USADA'), 'NOVA');
   });
 
+  test('nextWhere não devolve palavra filtrada quando ainda há candidata', () {
+    final deck = WordDeck([
+      'USADA_1',
+      'USADA_2',
+      'USADA_3',
+      'NOVA',
+    ], random: _SequenceRandom([0, 0, 0, 0]));
+
+    expect(deck.nextWhere((word) => word == 'NOVA'), 'NOVA');
+  });
+
   test('todas as palavras têm dicas sem entregar a resposta', () {
     const genericHints = {
       'Cabe em chamada curta de jornal',

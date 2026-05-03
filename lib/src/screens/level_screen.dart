@@ -56,8 +56,10 @@ class _LevelScreenState extends State<LevelScreen> with RouteAware {
   }
 
   Future<_CampaignSnapshot> _loadCampaignSnapshot() async {
+    await WordProgressStore.instance.repairStageProgressCacheOnce();
     var progress = await CampaignProgressStore.instance.loadProgress();
     final usedWordCounts = <GameLevel, int>{};
+    final completedStageCounts = <GameLevel, int>{};
     for (final level in const [
       GameLevel.easy,
       GameLevel.medium,
@@ -66,8 +68,12 @@ class _LevelScreenState extends State<LevelScreen> with RouteAware {
       usedWordCounts[level] = (await WordProgressStore.instance.loadUsedWords(
         level,
       )).length;
+      completedStageCounts[level] = await WordProgressStore.instance
+          .loadCompletedStageCount(level);
       if (!progress.isCompleted(level) &&
-          usedWordCounts[level]! >= campaignRequiredWordCountForLevel(level)) {
+          (usedWordCounts[level]! >= campaignRequiredWordCountForLevel(level) ||
+              completedStageCounts[level]! >=
+                  campaignStageCountForLevel(level))) {
         progress = await CampaignProgressStore.instance.completeLevel(level);
       }
     }
@@ -75,11 +81,13 @@ class _LevelScreenState extends State<LevelScreen> with RouteAware {
     final rankingPositions = await _loadRankingPositions(
       progress: progress,
       usedWordCounts: usedWordCounts,
+      completedStageCounts: completedStageCounts,
     );
 
     return _CampaignSnapshot(
       progress: progress,
       usedWordCounts: usedWordCounts,
+      completedStageCounts: completedStageCounts,
       rankingPositions: rankingPositions,
     );
   }
@@ -87,6 +95,7 @@ class _LevelScreenState extends State<LevelScreen> with RouteAware {
   Future<Map<String, int>> _loadRankingPositions({
     required CampaignProgress progress,
     required Map<GameLevel, int> usedWordCounts,
+    required Map<GameLevel, int> completedStageCounts,
   }) async {
     final cachedPositions = await RankingStore.instance
         .syncCachedStagePositions();
@@ -97,6 +106,7 @@ class _LevelScreenState extends State<LevelScreen> with RouteAware {
     final snapshot = _CampaignSnapshot(
       progress: progress,
       usedWordCounts: usedWordCounts,
+      completedStageCounts: completedStageCounts,
     );
     final freePlayPosition =
         cachedPositions[_subStageKey(GameLevel.pautaLivre, 0)];
@@ -369,15 +379,12 @@ class _NextObjectiveBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     final level = campaign.currentLevel;
     final accent = _chapterAccent(level);
-    final current = campaign.currentSubStageFor(level);
-    final total = campaign.subStageCountFor(level);
-    final remainingWords = campaign.remainingWordsFor(level);
     final title = campaign.completedGame
         ? 'Edição entregue'
-        : 'Jogar ${campaignStageLabelForLevel(level, current)} $current/$total';
+        : 'Continuar edição';
     final subtitle = campaign.completedGame
         ? 'Você concluiu todas as fases da campanha.'
-        : _nextObjectiveSubtitle(level, remainingWords);
+        : _nextObjectiveSubtitle(level);
 
     final enabled = !campaign.completedGame;
 
@@ -391,12 +398,12 @@ class _NextObjectiveBanner extends StatelessWidget {
         onTap: enabled ? onTap : null,
         borderRadius: BorderRadius.circular(8),
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(13, 12, 13, 12),
+          padding: const EdgeInsets.fromLTRB(12, 9, 12, 9),
           child: Row(
             children: [
               Container(
-                width: 42,
-                height: 42,
+                width: 38,
+                height: 38,
                 decoration: BoxDecoration(
                   color: accent,
                   shape: BoxShape.circle,
@@ -407,10 +414,10 @@ class _NextObjectiveBanner extends StatelessWidget {
                       ? Icons.local_shipping_rounded
                       : Icons.flag_rounded,
                   color: Colors.white,
-                  size: 21,
+                  size: 19,
                 ),
               ),
-              const SizedBox(width: 11),
+              const SizedBox(width: 10),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -432,23 +439,26 @@ class _NextObjectiveBanner extends StatelessWidget {
                             ),
                           ),
                         ),
-                        const SizedBox(width: 8),
-                        _ProgressBadge(
-                          label: '${campaign.totalPercent}%',
-                          color: accent,
+                        const SizedBox(width: 6),
+                        Icon(
+                          campaign.completedGame
+                              ? Icons.check_circle_rounded
+                              : Icons.arrow_forward_rounded,
+                          color: Colors.white.withValues(alpha: 0.86),
+                          size: 20,
                         ),
                       ],
                     ),
-                    const SizedBox(height: 5),
+                    const SizedBox(height: 3),
                     Text(
                       subtitle,
-                      maxLines: 2,
+                      maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         color: Colors.white.withValues(alpha: 0.75),
-                        fontSize: 12.5,
+                        fontSize: 12,
                         fontWeight: FontWeight.w700,
-                        height: 1.16,
+                        height: 1.1,
                       ),
                     ),
                   ],
@@ -2102,35 +2112,30 @@ class _FreePlayDock extends StatelessWidget {
     return Material(
       color: AppTheme.card.withValues(alpha: 0.98),
       borderRadius: BorderRadius.circular(8),
-      elevation: 6,
+      elevation: 5,
       shadowColor: AppTheme.midnight.withValues(alpha: 0.24),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final stacked = constraints.maxWidth < 360;
-
-          return Padding(
-            padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-            child: stacked
-                ? Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      _buildPlayTarget(context),
-                      const SizedBox(height: 8),
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: _buildActions(context),
-                      ),
-                    ],
-                  )
-                : Row(
-                    children: [
-                      Expanded(child: _buildPlayTarget(context)),
-                      const SizedBox(width: 8),
-                      _buildActions(context),
-                    ],
-                  ),
-          );
-        },
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(8, 7, 8, 7),
+        child: Row(
+          children: [
+            _buildSideButton(
+              context,
+              key: const ValueKey<String>('ranking_pautaLivre'),
+              tooltip: 'Ranking do Plantão',
+              icon: Icons.leaderboard_rounded,
+              onTap: () => _openFreePlayRanking(context),
+            ),
+            const SizedBox(width: 8),
+            Expanded(child: _buildPlayTarget(context)),
+            const SizedBox(width: 8),
+            _buildSideButton(
+              context,
+              tooltip: 'Jogar Pauta Livre',
+              icon: Icons.arrow_forward_rounded,
+              onTap: () => _openFreePlay(context),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -2140,134 +2145,91 @@ class _FreePlayDock extends StatelessWidget {
       key: const ValueKey<String>('stage_pautaLivre'),
       borderRadius: BorderRadius.circular(8),
       onTap: () => _openFreePlay(context),
-      child: Row(
-        children: [
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: AppTheme.pressGold,
-              borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 1),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'Pauta Livre',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: AppTheme.midnight,
+                fontWeight: FontWeight.w900,
+                fontSize: 15.5,
+                height: 1,
+              ),
             ),
-            child: const Icon(
-              Icons.dynamic_feed_rounded,
-              color: Colors.white,
-              size: 21,
-            ),
-          ),
-          const SizedBox(width: 11),
-          Expanded(
-            child: Row(
+            const SizedBox(height: 4),
+            Row(
               children: [
-                const Flexible(
-                  child: Text(
-                    'Pauta Livre',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: AppTheme.midnight,
-                      fontWeight: FontWeight.w900,
-                      fontSize: 17,
-                      height: 1,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: AppTheme.pressGold.withValues(alpha: 0.14),
-                    borderRadius: BorderRadius.circular(999),
-                    border: Border.all(
-                      color: AppTheme.pressGold.withValues(alpha: 0.28),
-                    ),
-                  ),
-                  child: const Text(
-                    'Jogo rápido',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: AppTheme.pressGold,
-                      fontWeight: FontWeight.w900,
-                      fontSize: 11,
-                      height: 1,
-                    ),
-                  ),
-                ),
+                Flexible(child: _buildQuickGameChip()),
+                if (rankingPosition != null) ...[
+                  const SizedBox(width: 7),
+                  _StageRankingBadge(position: rankingPosition!),
+                ],
               ],
             ),
-          ),
-          if (rankingPosition != null) ...[
-            const SizedBox(width: 8),
-            _StageRankingBadge(position: rankingPosition!),
           ],
-        ],
+        ),
       ),
     );
   }
 
-  Widget _buildActions(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Tooltip(
-          message: 'Ranking do Plantão',
-          child: Material(
-            color: AppTheme.pressGold.withValues(alpha: 0.14),
-            borderRadius: BorderRadius.circular(999),
-            child: InkWell(
-              key: const ValueKey<String>('ranking_pautaLivre'),
-              borderRadius: BorderRadius.circular(999),
-              onTap: () => _openFreePlayRanking(context),
-              child: Container(
-                width: 42,
-                height: 42,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(999),
-                  border: Border.all(
-                    color: AppTheme.pressGold.withValues(alpha: 0.34),
-                  ),
-                ),
-                child: const Icon(
-                  Icons.leaderboard_rounded,
-                  color: AppTheme.pressGold,
-                  size: 19,
-                ),
-              ),
-            ),
-          ),
+  Widget _buildQuickGameChip() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      decoration: BoxDecoration(
+        color: AppTheme.pressGold.withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: AppTheme.pressGold.withValues(alpha: 0.28)),
+      ),
+      child: const Text(
+        'Jogo rápido',
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          color: AppTheme.pressGold,
+          fontWeight: FontWeight.w900,
+          fontSize: 10.5,
+          height: 1,
         ),
-        const SizedBox(width: 8),
-        Material(
-          color: AppTheme.pressGold.withValues(alpha: 0.14),
+      ),
+    );
+  }
+
+  Widget _buildSideButton(
+    BuildContext context, {
+    Key? key,
+    required String tooltip,
+    required IconData icon,
+    required VoidCallback onTap,
+  }) {
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        color: AppTheme.pressGold.withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(999),
+        child: InkWell(
+          key: key,
           borderRadius: BorderRadius.circular(999),
-          child: InkWell(
-            borderRadius: BorderRadius.circular(999),
-            onTap: () => _openFreePlay(context),
-            child: Container(
-              width: 42,
-              height: 42,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: AppTheme.pressGold.withValues(alpha: 0.14),
-                borderRadius: BorderRadius.circular(999),
-                border: Border.all(
-                  color: AppTheme.pressGold.withValues(alpha: 0.34),
-                ),
-              ),
-              child: const Icon(
-                Icons.arrow_forward_rounded,
-                color: AppTheme.pressGold,
-                size: 19,
+          onTap: onTap,
+          child: Container(
+            width: 38,
+            height: 38,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(
+                color: AppTheme.pressGold.withValues(alpha: 0.34),
               ),
             ),
+            child: Icon(icon, color: AppTheme.pressGold, size: 18),
           ),
         ),
-      ],
+      ),
     );
   }
 }
@@ -2356,6 +2318,7 @@ class _CampaignSnapshot {
   const _CampaignSnapshot({
     required this.progress,
     required this.usedWordCounts,
+    this.completedStageCounts = const <GameLevel, int>{},
     this.rankingPositions = const <String, int>{},
   });
 
@@ -2363,12 +2326,14 @@ class _CampaignSnapshot {
     return const _CampaignSnapshot(
       progress: CampaignProgress(<GameLevel>{}),
       usedWordCounts: <GameLevel, int>{},
+      completedStageCounts: <GameLevel, int>{},
       rankingPositions: <String, int>{},
     );
   }
 
   final CampaignProgress progress;
   final Map<GameLevel, int> usedWordCounts;
+  final Map<GameLevel, int> completedStageCounts;
   final Map<String, int> rankingPositions;
 
   bool get completedGame => progress.isCompleted(GameLevel.hard);
@@ -2381,25 +2346,6 @@ class _CampaignSnapshot {
       return GameLevel.medium;
     }
     return GameLevel.hard;
-  }
-
-  int get totalStageCount =>
-      subStageCountFor(GameLevel.easy) +
-      subStageCountFor(GameLevel.medium) +
-      subStageCountFor(GameLevel.hard);
-
-  int get completedStageCount =>
-      completedSubStagesFor(GameLevel.easy) +
-      completedSubStagesFor(GameLevel.medium) +
-      completedSubStagesFor(GameLevel.hard);
-
-  int get totalPercent {
-    final total = totalStageCount;
-    if (total == 0) {
-      return 0;
-    }
-
-    return ((completedStageCount / total) * 100).floor();
   }
 
   int totalWordsFor(GameLevel level) =>
@@ -2415,15 +2361,21 @@ class _CampaignSnapshot {
     }
 
     final usedWords = (usedWordCounts[level] ?? 0).clamp(0, totalWords).toInt();
-    if (usedWords == 0) {
+    final completedByStages = (completedStageCounts[level] ?? 0)
+        .clamp(0, stageCount)
+        .toInt();
+    if (usedWords == 0 && completedByStages == 0) {
       return 0;
     }
 
-    if (usedWords >= totalWords) {
+    if (usedWords >= totalWords || completedByStages >= stageCount) {
       return stageCount;
     }
 
-    return math.min(stageCount, usedWords ~/ level.targetWordCount);
+    return math.min(
+      stageCount,
+      math.max(completedByStages, usedWords ~/ level.targetWordCount),
+    );
   }
 
   int currentSubStageFor(GameLevel level) {
@@ -2437,12 +2389,6 @@ class _CampaignSnapshot {
 
   int? rankingPositionFor(GameLevel level, int stageNumber) {
     return rankingPositions[_subStageKey(level, stageNumber)];
-  }
-
-  int remainingWordsFor(GameLevel level) {
-    final totalWords = totalWordsFor(level);
-    final usedWords = (usedWordCounts[level] ?? 0).clamp(0, totalWords).toInt();
-    return math.max(0, totalWords - usedWords);
   }
 
   String stageRangeLabel(GameLevel level) {
@@ -2497,16 +2443,12 @@ String _productionStepPreview({
   return '$count $unit • $range • ${level.targetWordCount} palavras por fase.';
 }
 
-String _nextObjectiveSubtitle(GameLevel level, int remainingWords) {
-  final target = switch (level) {
-    GameLevel.easy => 'a Redação',
-    GameLevel.medium => 'o Fechamento',
-    GameLevel.hard => 'a Entrega',
-    GameLevel.pautaLivre => 'fechar o plantão',
-  };
-
-  return '$remainingWords palavras até $target.';
-}
+String _nextObjectiveSubtitle(GameLevel level) => switch (level) {
+  GameLevel.easy => 'Próxima pauta.',
+  GameLevel.medium => 'Continuar redação.',
+  GameLevel.hard => 'Avançar fechamento.',
+  GameLevel.pautaLivre => 'Rodada rápida.',
+};
 
 String _editionLabel(GameLevel level) => switch (level) {
   GameLevel.easy => 'Edição 01 • Caderno de pauta',

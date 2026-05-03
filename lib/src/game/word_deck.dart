@@ -45,6 +45,14 @@ class WordDeck<T> {
       }
     }
 
+    final candidates = _sourceEntries.where(test).toList();
+    if (candidates.isNotEmpty) {
+      candidates.shuffle(_random);
+      final next = candidates.first;
+      _lastEntry = next;
+      return next;
+    }
+
     return nextWord();
   }
 }

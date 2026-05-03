@@ -253,6 +253,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _prepareGame() async {
+    await WordProgressStore.instance.repairStageProgressCacheOnce();
     if (_recordsCampaignProgress) {
       final usedWords = await WordProgressStore.instance.loadUsedWords(
         widget.level,
@@ -265,10 +266,17 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
 
       _usedWordsByLevel[widget.level] = usedWords;
       final requiredWords = campaignRequiredWordCountForLevel(widget.level);
-      _roundStageNumber = _stageNumberForUsedWords(
+      final completedStageCount = await WordProgressStore.instance
+          .loadCompletedStageCount(widget.level);
+      final stageByWords = _stageNumberForUsedWords(
         level: widget.level,
         usedWords: usedWords.length,
       );
+      final stageByCompletedStages = (completedStageCount + 1).clamp(
+        1,
+        _stageCountForLevel(widget.level),
+      );
+      _roundStageNumber = max(stageByWords, stageByCompletedStages);
       _roundTargetWordCount = min(
         widget.level.targetWordCount,
         max(1, requiredWords - usedWords.length),
@@ -525,13 +533,21 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       return _reserveWordDecks[sourceLevel]!.nextWhere(isAnyUnsolvedCandidate);
     }
 
-    final fallbackDeck =
-        _reserveWordDecks[sourceLevel] ?? _primaryWordDecks[sourceLevel]!;
-    return fallbackDeck.nextWhere(
-      (entry) =>
-          !usedWords.contains(entry.text) &&
-          !_skippedWords.contains(entry.text),
-    );
+    bool isFallbackCandidate(WordEntry entry) =>
+        !_sessionWords.contains(entry.text) &&
+        !_discoveredWords.contains(entry.text) &&
+        !usedWords.contains(entry.text) &&
+        !_skippedWords.contains(entry.text);
+
+    if (_hasReserveWordCandidate(sourceLevel, isFallbackCandidate)) {
+      return _reserveWordDecks[sourceLevel]!.nextWhere(isFallbackCandidate);
+    }
+
+    if (_hasPrimaryWordCandidate(sourceLevel, isFallbackCandidate)) {
+      return _primaryWordDecks[sourceLevel]!.nextWhere(isFallbackCandidate);
+    }
+
+    throw StateError('Sem palavras inéditas disponíveis para esta partida.');
   }
 
   bool _hasPrimaryWordCandidate(
@@ -752,7 +768,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
         }
 
         if (_shouldShowStageCelebration(entry)) {
-          await GameMusicService.instance.playStageCompletionBell();
+          await GameMusicService.instance.playStageCompletionCelebration();
         } else {
           await GameMusicService.instance.playEndOfGame();
         }
@@ -766,9 +782,12 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
             widget.level,
             _discoveredWords,
           );
+          final completedStageCount = await WordProgressStore.instance
+              .markStageCompleted(widget.level, _roundStageNumber);
           final levelCompleted =
+              completedStageCount >= campaignStageCountForLevel(widget.level) ||
               usedWords.length >=
-              campaignRequiredWordCountForLevel(widget.level);
+                  campaignRequiredWordCountForLevel(widget.level);
           if (levelCompleted) {
             completedLevel = widget.level;
             completedGame = widget.level == GameLevel.hard;
@@ -776,9 +795,9 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                 .completeLevel(widget.level);
             continueLevel = campaignProgress.nextLevelAfter(widget.level);
           } else {
-            continueStageNumber = campaignStageNumberForUsedWords(
-              level: widget.level,
-              usedWords: usedWords.length,
+            continueStageNumber = (completedStageCount + 1).clamp(
+              1,
+              campaignStageCountForLevel(widget.level),
             );
           }
         }

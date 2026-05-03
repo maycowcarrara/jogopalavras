@@ -289,6 +289,15 @@ class GameMusicService {
     await _playEffect(_endOfGamePlayer, _endOfGameAsset);
   }
 
+  Future<void> playStageCompletionCelebration() async {
+    await _playEffect(
+      _endOfGamePlayer,
+      _endOfGameAsset,
+      waitForCompletion: true,
+    );
+    await _playEffect(_endOfGamePlayer, _stageCompletionBellAsset);
+  }
+
   Future<void> playStageCompletionBell() async {
     await _playEffect(_endOfGamePlayer, _stageCompletionBellAsset);
   }
@@ -332,7 +341,11 @@ class GameMusicService {
     await _player.setVolume((_maxMusicVolume * _volume).clamp(0.0, 1.0));
   }
 
-  Future<void> _playEffect(AudioPlayer player, String asset) async {
+  Future<void> _playEffect(
+    AudioPlayer player,
+    String asset, {
+    bool waitForCompletion = false,
+  }) async {
     if (!_effectsEnabled || kIsWeb) {
       return;
     }
@@ -343,11 +356,30 @@ class GameMusicService {
       return;
     }
 
+    StreamSubscription<void>? completionSubscription;
+    Completer<void>? completion;
+
     try {
+      if (waitForCompletion) {
+        completion = Completer<void>();
+        completionSubscription = player.onPlayerComplete.listen((_) {
+          if (completion == null || completion.isCompleted) {
+            return;
+          }
+          completion.complete();
+        });
+      }
+
       await player.stop();
       await player.play(AssetSource(asset));
+      await completion?.future.timeout(
+        const Duration(seconds: 8),
+        onTimeout: () {},
+      );
     } catch (_) {
       // Ignore audio platform issues during tests or unsupported runtimes.
+    } finally {
+      await completionSubscription?.cancel();
     }
   }
 

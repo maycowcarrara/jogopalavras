@@ -276,7 +276,8 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.textContaining('Jogar Pauta 1/'), findsOneWidget);
+    expect(find.text('Continuar edição'), findsOneWidget);
+    expect(find.textContaining('Jogar pauta 1 de'), findsOneWidget);
 
     unawaited(
       navigatorKey.currentState!.push<void>(
@@ -296,7 +297,8 @@ void main() {
     navigatorKey.currentState!.pop();
     await tester.pumpAndSettle();
 
-    expect(find.textContaining('Jogar Pauta 2/'), findsOneWidget);
+    expect(find.text('Continuar edição'), findsOneWidget);
+    expect(find.textContaining('Jogar pauta 2 de'), findsOneWidget);
   });
 
   testWidgets('mapa mostra posição do ranking em fase concluída', (
@@ -337,7 +339,8 @@ void main() {
       await tester.pumpWidget(const MaterialApp(home: LevelScreen()));
       await tester.pumpAndSettle();
 
-      expect(find.textContaining('Jogar Redação 1/'), findsOneWidget);
+      expect(find.text('Continuar edição'), findsOneWidget);
+      expect(find.textContaining('Jogar redação 1 de'), findsOneWidget);
       expect(find.text('Redação'), findsAtLeastNWidgets(1));
     },
   );
