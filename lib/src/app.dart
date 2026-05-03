@@ -63,6 +63,9 @@ class _WordMazeAppState extends State<WordMazeApp> with WidgetsBindingObserver {
       title: 'Entreletras: Palavras Ocultas',
       theme: AppTheme.lightTheme,
       debugShowCheckedModeBanner: false,
+      builder: (context, child) {
+        return _PhoneViewportFrame(child: child ?? const SizedBox.shrink());
+      },
       navigatorObservers: [
         AppErrorReporter.instance.routeObserver,
         appRouteObserver,
@@ -81,6 +84,50 @@ class _WordMazeAppState extends State<WordMazeApp> with WidgetsBindingObserver {
           return snapshot.data! ? const LevelScreen() : const IntroScreen();
         },
       ),
+    );
+  }
+}
+
+class _PhoneViewportFrame extends StatelessWidget {
+  const _PhoneViewportFrame({required this.child});
+
+  static const double _maxPhoneWidth = 430;
+  static const double _phoneAspectRatio = 9 / 19.5;
+  static const double _wideScreenBreakpoint = 600;
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final usePhoneFrame = constraints.maxWidth >= _wideScreenBreakpoint;
+        if (!usePhoneFrame) {
+          return child;
+        }
+
+        final viewportHeight = constraints.maxHeight;
+        final widthFromHeight = viewportHeight * _phoneAspectRatio;
+        final viewportWidth = widthFromHeight.clamp(320.0, _maxPhoneWidth);
+
+        return ColoredBox(
+          color: AppTheme.midnight,
+          child: Center(
+            child: ClipRect(
+              child: SizedBox(
+                width: viewportWidth,
+                height: viewportHeight,
+                child: MediaQuery(
+                  data: MediaQuery.of(
+                    context,
+                  ).copyWith(size: Size(viewportWidth, viewportHeight)),
+                  child: child,
+                ),
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }

@@ -93,6 +93,7 @@ Existe um guia rápido em [docs/playstore-e-anuncios.md](docs/playstore-e-anunci
 
 Materiais de publicação:
 
+- [docs/builds-multiplataforma.md](docs/builds-multiplataforma.md)
 - [docs/ranking-api.md](docs/ranking-api.md)
 - [docs/index.html](docs/index.html)
 - [docs/privacy-policy.html](docs/privacy-policy.html)
