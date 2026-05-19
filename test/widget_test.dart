@@ -229,9 +229,9 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Continuar em Apuração'), findsOneWidget);
+    expect(find.text('Próxima fase: Apuração 11'), findsOneWidget);
 
-    await tester.tap(find.text('Continuar em Apuração'));
+    await tester.tap(find.text('Próxima fase: Apuração 11'));
     await tester.pumpAndSettle();
 
     expect(find.textContaining('Apuração 11/19'), findsOneWidget);

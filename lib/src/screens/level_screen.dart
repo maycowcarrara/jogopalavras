@@ -564,37 +564,45 @@ class _EditorialChapterMarker extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 10),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-          decoration: BoxDecoration(
-            color: AppTheme.card.withValues(alpha: 0.92),
-            borderRadius: BorderRadius.circular(999),
-            border: Border.all(color: accent.withValues(alpha: 0.38)),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                completed
-                    ? Icons.task_alt_rounded
-                    : unlocked
-                    ? Icons.newspaper_rounded
-                    : Icons.lock_rounded,
-                color: accent,
-                size: 15,
-              ),
-              const SizedBox(width: 6),
-              Text(
-                '${_editionLabel(level)} • $rangeLabel',
-                style: TextStyle(
-                  color: AppTheme.ink.withValues(alpha: unlocked ? 0.82 : 0.5),
-                  fontSize: 11,
-                  fontWeight: FontWeight.w900,
-                  height: 1,
-                  letterSpacing: 0,
+        Flexible(
+          flex: 4,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: AppTheme.card.withValues(alpha: 0.92),
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(color: accent.withValues(alpha: 0.38)),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  completed
+                      ? Icons.task_alt_rounded
+                      : unlocked
+                      ? Icons.newspaper_rounded
+                      : Icons.lock_rounded,
+                  color: accent,
+                  size: 15,
                 ),
-              ),
-            ],
+                const SizedBox(width: 6),
+                Flexible(
+                  child: Text(
+                    '${_editionLabel(level)} • $rangeLabel',
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: AppTheme.ink.withValues(
+                        alpha: unlocked ? 0.82 : 0.5,
+                      ),
+                      fontSize: 11,
+                      fontWeight: FontWeight.w900,
+                      height: 1,
+                      letterSpacing: 0,
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
         const SizedBox(width: 10),

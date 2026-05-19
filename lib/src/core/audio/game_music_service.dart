@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/foundation.dart';
@@ -13,6 +14,8 @@ class GameMusicService {
   final AudioPlayer _player = AudioPlayer();
   final AudioPlayer _wordVictoryPlayer = AudioPlayer();
   final AudioPlayer _endOfGamePlayer = AudioPlayer();
+  final AudioPlayer _stageCelebrationPlayer = AudioPlayer();
+  final math.Random _random = math.Random();
   StreamSubscription<void>? _playerCompleteSubscription;
 
   bool _initialized = false;
@@ -23,7 +26,6 @@ class GameMusicService {
   double _volume = 1;
   String? _currentAsset;
   GameLevel? _currentLevel;
-  int _playlistIndex = -1;
 
   static const String _musicEnabledKey = 'music_enabled_v1';
   static const String _effectsEnabledKey = 'effects_enabled_v1';
@@ -64,7 +66,7 @@ class GameMusicService {
 
     try {
       await _applyMusicVolume();
-      await _playAsset(_currentAsset ?? _nextPlaylistAsset());
+      await _playAsset(_currentAsset ?? _randomPlaylistAsset());
     } catch (_) {
       // Ignore audio platform issues during tests or unsupported runtimes.
     }
@@ -100,6 +102,9 @@ class GameMusicService {
       await _endOfGamePlayer.setReleaseMode(ReleaseMode.stop);
       await _endOfGamePlayer.setAudioContext(mixContext);
       await _endOfGamePlayer.setVolume(_effectsOutputVolume);
+      await _stageCelebrationPlayer.setReleaseMode(ReleaseMode.stop);
+      await _stageCelebrationPlayer.setAudioContext(mixContext);
+      await _stageCelebrationPlayer.setVolume(_effectsOutputVolume);
       _playerCompleteSubscription = _player.onPlayerComplete.listen((_) {
         unawaited(_playNextTrack());
       });
@@ -112,7 +117,7 @@ class GameMusicService {
   Future<void> playForLevel(GameLevel level) async {
     await initialize();
 
-    final asset = level.soundtrackAsset;
+    final asset = _randomPlaylistAsset(avoidAsset: _currentAsset);
     _currentAsset = asset;
     _currentLevel = level;
     _pausedByGame = false;
@@ -216,6 +221,7 @@ class GameMusicService {
     try {
       await _wordVictoryPlayer.stop();
       await _endOfGamePlayer.stop();
+      await _stageCelebrationPlayer.stop();
     } catch (_) {
       // Ignore audio platform issues during tests or unsupported runtimes.
     }
@@ -271,6 +277,7 @@ class GameMusicService {
       await _player.stop();
       await _wordVictoryPlayer.stop();
       await _endOfGamePlayer.stop();
+      await _stageCelebrationPlayer.stop();
       _musicPlaying = false;
     } catch (_) {
       // Ignore audio platform issues during tests or unsupported runtimes.
@@ -290,12 +297,9 @@ class GameMusicService {
   }
 
   Future<void> playStageCompletionCelebration() async {
-    await _playEffect(
-      _endOfGamePlayer,
-      _endOfGameAsset,
-      waitForCompletion: true,
-    );
-    await _playEffect(_endOfGamePlayer, _stageCompletionBellAsset);
+    await _playEffect(_endOfGamePlayer, _endOfGameAsset);
+    await _playApplausePattern();
+    await _playEffect(_stageCelebrationPlayer, _stageCompletionBellAsset);
   }
 
   Future<void> playStageCompletionBell() async {
@@ -311,6 +315,7 @@ class GameMusicService {
       await _playerCompleteSubscription?.cancel();
       await _wordVictoryPlayer.dispose();
       await _endOfGamePlayer.dispose();
+      await _stageCelebrationPlayer.dispose();
       await _player.dispose();
     } catch (_) {
       // Ignore audio platform issues during tests or unsupported runtimes.
@@ -324,7 +329,7 @@ class GameMusicService {
 
     try {
       await _applyMusicVolume();
-      await _playAsset(_nextPlaylistAsset());
+      await _playAsset(_randomPlaylistAsset(avoidAsset: _currentAsset));
     } catch (_) {
       // Ignore audio platform issues during tests or unsupported runtimes.
     }
@@ -332,7 +337,6 @@ class GameMusicService {
 
   Future<void> _playAsset(String asset) async {
     _currentAsset = asset;
-    _playlistIndex = _playlistAssets.indexOf(asset);
     await _player.play(AssetSource(asset));
     _musicPlaying = true;
   }
@@ -383,8 +387,23 @@ class GameMusicService {
     }
   }
 
-  String _nextPlaylistAsset() {
-    _playlistIndex = (_playlistIndex + 1) % _playlistAssets.length;
-    return _playlistAssets[_playlistIndex];
+  Future<void> _playApplausePattern() async {
+    const rhythm = <int>[40, 85, 95, 70, 135, 80, 90, 125, 75, 150];
+    for (final delay in rhythm) {
+      await Future<void>.delayed(Duration(milliseconds: delay));
+      await _playEffect(_wordVictoryPlayer, _wordVictoryKeyAsset);
+    }
+  }
+
+  String _randomPlaylistAsset({String? avoidAsset}) {
+    if (_playlistAssets.length <= 1) {
+      return _playlistAssets.first;
+    }
+
+    final candidates = [
+      for (final asset in _playlistAssets)
+        if (asset != avoidAsset) asset,
+    ];
+    return candidates[_random.nextInt(candidates.length)];
   }
 }

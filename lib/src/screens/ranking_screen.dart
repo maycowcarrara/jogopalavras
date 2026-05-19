@@ -188,6 +188,7 @@ class _StageCelebrationShell extends StatelessWidget {
       children: [
         child,
         Positioned.fill(child: _StageCompletionConfetti(accent: accent)),
+        Positioned.fill(child: _StageCompletionApplause(accent: accent)),
       ],
     );
   }
@@ -509,6 +510,17 @@ class _RankingHeader extends StatelessWidget {
         : highlightPosition > 0
         ? 'Sua rodada ficou em #$highlightPosition com ${highlightEntry!.score} pontos.'
         : 'Sua rodada foi salva com ${highlightEntry!.score} pontos.';
+    final actionLabel = _rankingPrimaryActionLabel(
+      level: level,
+      stageNumber: stageNumber,
+      highlightEntry: highlightEntry,
+      continueLevel: continueLevel,
+      continueStageNumber: continueStageNumber,
+      completedGame: completedGame,
+    );
+    final actionIcon = highlightEntry == null
+        ? Icons.play_arrow_rounded
+        : Icons.arrow_forward_rounded;
 
     return Container(
       padding: const EdgeInsets.all(20),
@@ -582,6 +594,7 @@ class _RankingHeader extends StatelessWidget {
                           backgroundColor: AppTheme.card,
                           foregroundColor: AppTheme.midnight,
                           elevation: 0,
+                          minimumSize: const Size(0, 44),
                           padding: const EdgeInsets.symmetric(
                             horizontal: 14,
                             vertical: 11,
@@ -614,22 +627,8 @@ class _RankingHeader extends StatelessWidget {
                             ),
                           );
                         },
-                        icon: const Icon(Icons.play_arrow_rounded, size: 20),
-                        label: Text(
-                          highlightEntry == null
-                              ? stageLabel != null
-                                    ? 'Jogar $stageLabel $stageNumber'
-                                    : 'Jogar no ${level.title.toLowerCase()}'
-                              : continueLevel == null
-                              ? 'Continuar fase'
-                              : continueLevel == level &&
-                                    continueStageNumber != null &&
-                                    continueStageNumber! > 0
-                              ? 'Continuar em ${campaignStageLabelForLevel(level, continueStageNumber!)}'
-                              : continueLevel == level
-                              ? 'Continuar fase'
-                              : 'Continuar no ${continueLevel!.title.toLowerCase()}',
-                        ),
+                        icon: Icon(actionIcon, size: 20),
+                        label: Text(actionLabel),
                       ),
                     ),
                   ],
@@ -698,6 +697,128 @@ class _StageCompletionConfettiState extends State<_StageCompletionConfetti>
             ),
           );
         },
+      ),
+    );
+  }
+}
+
+class _StageCompletionApplause extends StatefulWidget {
+  const _StageCompletionApplause({required this.accent});
+
+  final Color accent;
+
+  @override
+  State<_StageCompletionApplause> createState() =>
+      _StageCompletionApplauseState();
+}
+
+class _StageCompletionApplauseState extends State<_StageCompletionApplause>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1800),
+  );
+
+  static const _cues = [
+    _ApplauseCue(Alignment(-0.88, -0.72), 0.00, -0.32),
+    _ApplauseCue(Alignment(0.84, -0.66), 0.08, 0.28),
+    _ApplauseCue(Alignment(-0.66, -0.34), 0.16, -0.18),
+    _ApplauseCue(Alignment(0.66, -0.30), 0.24, 0.22),
+    _ApplauseCue(Alignment(-0.36, -0.78), 0.32, -0.26),
+    _ApplauseCue(Alignment(0.34, -0.76), 0.40, 0.26),
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    _controller.forward();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final reduceMotion =
+        MediaQuery.maybeOf(context)?.disableAnimations ?? false;
+    final progress = reduceMotion ? 0.68 : _controller.value;
+
+    return IgnorePointer(
+      child: AnimatedBuilder(
+        animation: _controller,
+        builder: (context, _) {
+          final value = reduceMotion ? progress : _controller.value;
+          return Stack(
+            children: [
+              for (var index = 0; index < _cues.length; index++)
+                _ApplauseHand(
+                  cue: _cues[index],
+                  progress: value,
+                  color: index.isEven ? widget.accent : AppTheme.pressGold,
+                ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _ApplauseCue {
+  const _ApplauseCue(this.alignment, this.delay, this.rotation);
+
+  final Alignment alignment;
+  final double delay;
+  final double rotation;
+}
+
+class _ApplauseHand extends StatelessWidget {
+  const _ApplauseHand({
+    required this.cue,
+    required this.progress,
+    required this.color,
+  });
+
+  final _ApplauseCue cue;
+  final double progress;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = ((progress - cue.delay) / 0.56).clamp(0.0, 1.0).toDouble();
+    final wave = math.sin(t * math.pi).clamp(0.0, 1.0).toDouble();
+    final scale = 0.62 + (Curves.easeOutBack.transform(t) * 0.48);
+    final lift = wave * 22;
+    final opacity = wave * 0.92;
+
+    return Align(
+      alignment: cue.alignment,
+      child: Opacity(
+        opacity: opacity,
+        child: Transform.translate(
+          offset: Offset(0, -lift),
+          child: Transform.rotate(
+            angle: cue.rotation + (math.sin(t * math.pi * 2) * 0.16),
+            child: Transform.scale(
+              scale: scale,
+              child: Icon(
+                Icons.waving_hand_rounded,
+                color: color,
+                size: 32,
+                shadows: [
+                  Shadow(
+                    color: AppTheme.midnight.withValues(alpha: 0.18),
+                    blurRadius: 10,
+                    offset: const Offset(0, 5),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -1138,4 +1259,44 @@ String _formatTime(int totalSeconds) {
   final minutes = totalSeconds ~/ 60;
   final seconds = totalSeconds.remainder(60).toString().padLeft(2, '0');
   return '$minutes:$seconds';
+}
+
+String _rankingPrimaryActionLabel({
+  required GameLevel level,
+  required int? stageNumber,
+  required RankingEntry? highlightEntry,
+  required GameLevel? continueLevel,
+  required int? continueStageNumber,
+  required bool completedGame,
+}) {
+  final stageLabel =
+      stageNumber != null && stageNumber > 0 && level != GameLevel.pautaLivre
+      ? campaignStageLabelForLevel(level, stageNumber)
+      : null;
+
+  if (highlightEntry == null) {
+    return stageLabel == null
+        ? 'Jogar ${level.title.toLowerCase()}'
+        : 'Jogar $stageLabel $stageNumber';
+  }
+
+  if (completedGame || continueLevel == null) {
+    return 'Jogar novamente';
+  }
+
+  if (continueLevel == level &&
+      continueStageNumber != null &&
+      continueStageNumber > 0) {
+    final nextStageLabel = campaignStageLabelForLevel(
+      level,
+      continueStageNumber,
+    );
+    return 'Próxima fase: $nextStageLabel $continueStageNumber';
+  }
+
+  if (continueLevel == level) {
+    return 'Próxima fase';
+  }
+
+  return 'Avançar para ${continueLevel.title}';
 }
