@@ -14,6 +14,8 @@ $pagesBranch = 'main'
 $pagesUrl = "https://$pagesProjectName.pages.dev"
 $bannerAdUnitId = 'ca-app-pub-5325559668232561/9738756810'
 $interstitialAdUnitId = 'ca-app-pub-5325559668232561/4169586588'
+$syncPublicFilesScript = Join-Path $PSScriptRoot 'sync-web-public-files.ps1'
+$wranglerCmd = Join-Path $projectRoot 'workers\ranking-api\node_modules\.bin\wrangler.cmd'
 
 function Assert-PathInsideReleaseRoot {
   param([Parameter(Mandatory = $true)][string]$Path)
@@ -61,15 +63,39 @@ function Invoke-CheckedCommand {
   }
 }
 
+function Get-WranglerCommand {
+  if (Test-Path -LiteralPath $wranglerCmd) {
+    return $wranglerCmd
+  }
+
+  return 'npx'
+}
+
+function Get-WranglerBaseArgs {
+  if (Test-Path -LiteralPath $wranglerCmd) {
+    return @()
+  }
+
+  return @('wrangler')
+}
+
+function Assert-WranglerAuthenticated {
+  $command = Get-WranglerCommand
+  $baseArgs = Get-WranglerBaseArgs
+  $output = & $command @baseArgs whoami 2>&1 | Out-String
+  if ($output -match 'not authenticated') {
+    throw "Cloudflare Wrangler nao autenticado neste ambiente. Rode 'workers\\ranking-api\\node_modules\\.bin\\wrangler.cmd login' e tente novamente."
+  }
+}
+
 function Publish-WebRelease {
   param([Parameter(Mandatory = $true)][string]$Directory)
 
-  $wranglerCmd = Join-Path $projectRoot 'workers\ranking-api\node_modules\.bin\wrangler.cmd'
-  if (Test-Path -LiteralPath $wranglerCmd) {
-    & $wranglerCmd pages deploy $Directory --project-name $pagesProjectName --branch $pagesBranch
-  } else {
-    & npx wrangler pages deploy $Directory --project-name $pagesProjectName --branch $pagesBranch
-  }
+  Assert-WranglerAuthenticated
+
+  $command = Get-WranglerCommand
+  $baseArgs = Get-WranglerBaseArgs
+  & $command @baseArgs pages deploy $Directory --project-name $pagesProjectName --branch $pagesBranch
 
   if ($LASTEXITCODE -ne 0) {
     exit $LASTEXITCODE
@@ -84,6 +110,11 @@ switch ($Target) {
       build web --release "--dart-define=RANKING_API_URL=$rankingApiUrl"
 
     $source = Join-Path $projectRoot 'build\web'
+    & $syncPublicFilesScript -Destination $source
+    if ($LASTEXITCODE -ne 0) {
+      exit $LASTEXITCODE
+    }
+
     $destination = Join-Path $releaseRoot 'web'
     Copy-DirectoryContents -Source $source -Destination $destination
     Write-Host "Web copiada para: $destination"

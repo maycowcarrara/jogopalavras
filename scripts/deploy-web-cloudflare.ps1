@@ -12,6 +12,32 @@ $projectRoot = Split-Path -Parent $PSScriptRoot
 $buildDir = Join-Path $projectRoot 'build\web'
 $indexFile = Join-Path $buildDir 'index.html'
 $wranglerCmd = Join-Path $projectRoot 'workers\ranking-api\node_modules\.bin\wrangler.cmd'
+$syncPublicFilesScript = Join-Path $PSScriptRoot 'sync-web-public-files.ps1'
+
+function Get-WranglerCommand {
+  if (Test-Path -LiteralPath $wranglerCmd) {
+    return $wranglerCmd
+  }
+
+  return 'npx'
+}
+
+function Get-WranglerBaseArgs {
+  if (Test-Path -LiteralPath $wranglerCmd) {
+    return @()
+  }
+
+  return @('wrangler')
+}
+
+function Assert-WranglerAuthenticated {
+  $command = Get-WranglerCommand
+  $baseArgs = Get-WranglerBaseArgs
+  $output = & $command @baseArgs whoami 2>&1 | Out-String
+  if ($output -match 'not authenticated') {
+    throw "Cloudflare Wrangler nao autenticado neste ambiente. Rode 'workers\\ranking-api\\node_modules\\.bin\\wrangler.cmd login' e tente novamente."
+  }
+}
 
 if ($BuildFirst) {
   $flutterArgs = @(
@@ -36,10 +62,15 @@ if (-not (Test-Path -LiteralPath $indexFile)) {
   exit 1
 }
 
-if (Test-Path -LiteralPath $wranglerCmd) {
-  & $wranglerCmd pages deploy $buildDir --project-name $ProjectName --branch $Branch
-} else {
-  & npx wrangler pages deploy $buildDir --project-name $ProjectName --branch $Branch
+& $syncPublicFilesScript -Destination $buildDir
+if ($LASTEXITCODE -ne 0) {
+  exit $LASTEXITCODE
 }
+
+Assert-WranglerAuthenticated
+
+$command = Get-WranglerCommand
+$baseArgs = Get-WranglerBaseArgs
+& $command @baseArgs pages deploy $buildDir --project-name $ProjectName --branch $Branch
 
 exit $LASTEXITCODE

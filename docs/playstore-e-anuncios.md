@@ -26,8 +26,10 @@ em jogo casual, inteligente e com anúncios não intrusivos.
 5. Confirme se os IDs reais do AdMob continuam configurados em
    `android/gradle.properties` e `package.json`.
 6. Ative anúncios usando o script `npm run build:aab:ads`.
-7. Publique a política de privacidade pelo GitHub Pages usando
-   `docs/privacy-policy.html`.
+7. Publique a política de privacidade e o `app-ads.txt` no mesmo domínio do
+   site do desenvolvedor informado na Play Console. Neste projeto, o fluxo web
+   já sincroniza `docs/privacy-policy.html` e `docs/app-ads.txt` para a raiz do
+   site publicado.
 8. Preencha Segurança de Dados, Anúncios e Classificação de Conteúdo na Play
    Console.
 9. Suba primeiro para teste interno/fechado e jogue pelo menos uma rodada em cada
@@ -86,8 +88,26 @@ local, especialmente EEA/Reino Unido, antes de ativar anúncios personalizados.
 - `docs/play-store-listing.md`: textos para listagem.
 - `docs/privacy-policy.md`: texto-base de política de privacidade.
 - `docs/privacy-policy.html`: página pública pronta para GitHub Pages.
+- `docs/app-ads.txt`: arquivo público exigido pela AdMob para apps com anúncios.
 - `docs/index.html`: página inicial simples do app para GitHub Pages.
 - `docs/release-checklist.md`: checklist final antes de enviar o `.aab`.
+
+## app-ads.txt
+
+Use exatamente este conteúdo no arquivo publicado na raiz do domínio:
+
+```text
+google.com, pub-5325559668232561, DIRECT, f08c47fec0942fa0
+```
+
+Checklist rápido:
+
+1. O domínio no campo **site do desenvolvedor** da Play Console precisa ser o
+   mesmo domínio que responde `https://SEU_DOMINIO/app-ads.txt`.
+2. O arquivo deve responder como texto puro, sem redirecionar para o
+   `index.html` do app.
+3. Depois de publicar o arquivo revisado, aguarde a nova varredura da AdMob e
+   use **Verificar se há atualizações**.
 
 ## Publicar a política pelo GitHub Pages
 

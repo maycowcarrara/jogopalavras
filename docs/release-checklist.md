@@ -10,6 +10,7 @@ Use este checklist antes de enviar o primeiro `.aab` para a Play Console.
 - [ ] Confirmar `ADMOB_ANDROID_APP_ID` real em `android/gradle.properties`.
 - [ ] Confirmar `ADMOB_ANDROID_BANNER_ID` real em `package.json`.
 - [ ] Confirmar `ADMOB_ANDROID_INTERSTITIAL_ID` real em `package.json`.
+- [ ] Confirmar `docs/app-ads.txt` com `google.com, pub-5325559668232561, DIRECT, f08c47fec0942fa0`.
 - [ ] Rodar `flutter analyze --no-pub`.
 - [ ] Rodar `flutter test`.
 - [ ] Gerar `.aab` de release.
@@ -41,6 +42,7 @@ Use este checklist antes de enviar o primeiro `.aab` para a Play Console.
 - [ ] Inserir URL pública da política de privacidade.
 - [ ] Ativar GitHub Pages em `Settings > Pages > Deploy from a branch > main > /docs`.
 - [ ] Testar a URL `https://SEU_USUARIO.github.io/NOME_DO_REPO/privacy-policy.html`.
+- [ ] Testar a URL `https://SEU_DOMINIO/app-ads.txt` e confirmar resposta em texto puro, sem cair no `index.html`.
 - [ ] Enviar ícone, screenshots e feature graphic.
 - [ ] Criar teste interno ou fechado.
 - [ ] Revisar relatório pré-lançamento da Play Console.
